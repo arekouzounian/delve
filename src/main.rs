@@ -12,6 +12,8 @@ use rand::prelude::*;
 const FRAMES_PER_SECOND: u64 = 1;
 const MS_PER_TICK: Duration = Duration::from_millis(1000 / FRAMES_PER_SECOND);
 
+pub struct Point(u16, u16);
+
 pub trait PlotQueuer: Write + QueueableCommand {
     fn plot(&mut self, col: u16, row: u16, character: char) -> std::io::Result<()>;
 }
@@ -27,9 +29,50 @@ impl<T: Write + QueueableCommand> PlotQueuer for T {
 
 fn setup() -> std::io::Result<()> {
     stdout()
-        .execute(cursor::DisableBlinking)?
-        .execute(cursor::Hide)?
-        .execute(terminal::DisableLineWrap)?;
+        .queue(cursor::DisableBlinking)?
+        .queue(cursor::Hide)?
+        .queue(terminal::DisableLineWrap)?
+        .flush()
+}
+
+fn teardown() -> std::io::Result<()> {
+    stdout()
+        .queue(terminal::Clear(terminal::ClearType::Purge))?
+        .queue(cursor::MoveTo(0, 0))?
+        .queue(cursor::EnableBlinking)?
+        .queue(cursor::Show)?
+        .flush()?;
+
+    let (cols, rows) = terminal::size()?;
+    println!("rows: {} cols: {}", rows, cols);
+
+    Ok(())
+}
+
+// Bresenham's line algorithm
+fn plot_line<B>(buf: &mut B, p1: Point, p2: Point, rune: char) -> std::io::Result<()>
+where
+    B: PlotQueuer,
+{
+    assert!(p1.0 < p2.0);
+    assert!(p1.1 < p2.1);
+
+    let dx = p2.0 as i16 - p1.0 as i16;
+    let dy = p2.1 as i16 - p1.1 as i16;
+
+    let mut error = 2 * dy - dx;
+    let mut curr_y = p1.1;
+
+    for x in p1.0..=p2.0 {
+        buf.plot(x, curr_y, rune)?;
+
+        if error > 0 {
+            curr_y += 1;
+            error += 2 * (dy - dx);
+        } else {
+            error += 2 * dy;
+        }
+    }
 
     Ok(())
 }
@@ -39,26 +82,31 @@ fn render_frame(rng: &mut ThreadRng, rows: u16, cols: u16) -> std::io::Result<()
 
     buffer.execute(terminal::Clear(terminal::ClearType::All))?;
 
-    // pick a random point, then draw a small square
-    let rand_col = rng.random_range(0..rows);
-    let rand_row = rng.random_range(0..cols);
-
-    for row in 0..3 {
-        for col in 0..4 {
-            buffer.plot(rand_col + col, rand_row + row, '@')?;
-        }
+    // wireframe
+    for x in 0..=cols {
+        buffer.plot(x, 0, '@')?;
+        buffer.plot(x, rows, '@')?;
     }
 
-    buffer.flush()
-}
+    for y in 1..rows - 1 {
+        buffer.plot(0, y, '$')?;
+        buffer.plot(cols, y, '$')?;
+    }
 
-fn teardown() -> std::io::Result<()> {
-    let mut buffer = stdout();
+    // pick a random point, then draw a line some random offset away
+    let offset = 5;
+    let rand_col = rng.random_range(1..cols);
+    let rand_row = rng.random_range(1..rows);
 
-    buffer
-        .queue(terminal::Clear(terminal::ClearType::Purge))?
-        .queue(cursor::MoveTo(0, 0))?
-        .queue(cursor::EnableBlinking)?;
+    let rand_offset_x = (rand_col + rng.random_range(1..=offset)).clamp(rand_col, cols);
+    let rand_offset_y = (rand_row + rng.random_range(1..=offset)).clamp(rand_row, rows);
+
+    plot_line(
+        &mut buffer,
+        Point(rand_col, rand_row),
+        Point(rand_offset_x, rand_offset_y),
+        '@',
+    )?;
 
     buffer.flush()
 }
@@ -82,7 +130,7 @@ fn main() -> std::io::Result<()> {
     while running.load(Ordering::SeqCst) {
         let start_time = Instant::now();
 
-        let (rows, cols) = terminal::size()?;
+        let (cols, rows) = terminal::size()?;
         render_frame(&mut rng, rows, cols)?;
 
         let end_time = Instant::now();
