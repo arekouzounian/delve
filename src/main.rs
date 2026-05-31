@@ -1,4 +1,4 @@
-use std::io::{Write, stdout};
+use std::io::{Stdout, Write, stdout};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -9,21 +9,102 @@ use std::time::{Duration, Instant};
 use crossterm::{ExecutableCommand, QueueableCommand, cursor, style, terminal};
 use rand::prelude::*;
 
+use crate::space::{Camera, Scene, Shape, Sphere};
+use crate::vector::Vec3;
+
+mod space;
+mod util;
+mod vector;
+
 const FRAMES_PER_SECOND: u64 = 1;
 const MS_PER_TICK: Duration = Duration::from_millis(1000 / FRAMES_PER_SECOND);
 
-pub struct Point(u16, u16);
+// adjust depending on terminal? or is it standard?
+const CELL_WIDTH_TO_HEIGHT_RATIO: f32 = 0.5;
 
-pub trait PlotQueuer: Write + QueueableCommand {
-    fn plot(&mut self, col: u16, row: u16, character: char) -> std::io::Result<()>;
+pub trait BufType: Write + ExecutableCommand + QueueableCommand {}
+impl<T: Write + ExecutableCommand + QueueableCommand> BufType for T {}
+
+#[derive(Clone)]
+pub struct Cell {
+    #[allow(unused)]
+    brightness: f32,
+    row: u16,
+    col: u16,
+    rune: u8,
 }
 
-impl<T: Write + QueueableCommand> PlotQueuer for T {
-    fn plot(&mut self, col: u16, row: u16, character: char) -> std::io::Result<()> {
-        self.queue(cursor::MoveTo(col, row))?
-            .queue(style::Print(character))?;
+impl Cell {
+    pub fn default(row: u16, col: u16) -> Self {
+        Self {
+            brightness: 1.0,
+            row,
+            col,
+            rune: b'@',
+        }
+    }
+}
+
+// assuming stdout for now
+pub struct FrameBuffer {
+    inner_buf: Vec<Vec<Option<Cell>>>,
+    stdout_handle: Stdout,
+}
+
+impl FrameBuffer {
+    pub fn new(rows: u16, cols: u16) -> Self {
+        Self {
+            inner_buf: vec![vec![None; cols as usize]; rows as usize],
+            stdout_handle: stdout(),
+        }
+    }
+
+    pub fn set_cell(&mut self, c: Cell) {
+        let row = c.row as usize;
+        let col = c.col as usize;
+        assert!(row < self.inner_buf.len());
+        assert!(col < self.inner_buf[0].len());
+
+        self.inner_buf[row][col] = Some(c);
+    }
+
+    // clears stdout and sets all cells to None
+    pub fn clear_all(&mut self) -> std::io::Result<()> {
+        self.stdout_handle
+            .execute(terminal::Clear(terminal::ClearType::All))?;
+
+        for row in &mut self.inner_buf {
+            for cell in row {
+                cell.take();
+            }
+        }
 
         Ok(())
+    }
+
+    pub fn rows(&self) -> u16 {
+        self.inner_buf.len() as u16
+    }
+
+    pub fn cols(&self) -> u16 {
+        self.inner_buf[0].len() as u16
+    }
+
+    pub fn draw_to_stdout(&mut self) -> std::io::Result<()> {
+        self.stdout_handle.queue(cursor::MoveTo(0, 0))?;
+
+        for curr_row in &self.inner_buf {
+            for curr_col in curr_row {
+                if let Some(cell) = curr_col {
+                    self.stdout_handle
+                        .queue(cursor::MoveTo(cell.col, cell.row))?;
+                    self.stdout_handle.queue(style::Print(cell.rune as char))?;
+                    // TODO: styled content + brightness?
+                }
+            }
+        }
+
+        self.stdout_handle.flush()
     }
 }
 
@@ -49,66 +130,50 @@ fn teardown() -> std::io::Result<()> {
     Ok(())
 }
 
-// Bresenham's line algorithm
-fn plot_line<B>(buf: &mut B, p1: Point, p2: Point, rune: char) -> std::io::Result<()>
-where
-    B: PlotQueuer,
-{
-    assert!(p1.0 < p2.0);
-    assert!(p1.1 < p2.1);
+fn render_frame(
+    buffer: &mut FrameBuffer,
+    scene: &mut Scene,
+    rng: &mut ThreadRng,
+) -> std::io::Result<()> {
+    buffer.clear_all()?;
 
-    let dx = p2.0 as i16 - p1.0 as i16;
-    let dy = p2.1 as i16 - p1.1 as i16;
+    let width = buffer.cols() as f32;
+    let height = buffer.rows() as f32;
 
-    let mut error = 2 * dy - dx;
-    let mut curr_y = p1.1;
+    let aspect_ratio = (width / height) * CELL_WIDTH_TO_HEIGHT_RATIO;
 
-    for x in p1.0..=p2.0 {
-        buf.plot(x, curr_y, rune)?;
+    // do we need to recompute these?
+    let forward_normal = scene.camera.forward_normal();
+    let right_normal = scene.camera.right_normal();
+    let up_normal = scene.camera.up_normal();
 
-        if error > 0 {
-            curr_y += 1;
-            error += 2 * (dy - dx);
-        } else {
-            error += 2 * dy;
+    for row in 0..buffer.rows() {
+        for col in 0..buffer.cols() {
+            // map to normalized device coordinates
+            // center is (0,0), top right is (1,1), bottom left is (-1,-1)
+            let mut ndc_x = ((2.0 * col as f32) - width) / width;
+            let mut ndc_y = (height - (2.0 * row as f32)) / height;
+
+            // adjust for aspect ratio
+            ndc_x *= aspect_ratio * scene.camera.fov_factor();
+            ndc_y *= scene.camera.fov_factor();
+
+            let normalized_ray_direction = (forward_normal.clone()
+                + right_normal.scalar_multiply(ndc_x)
+                + up_normal.scalar_multiply(ndc_y))
+            .normalize();
+
+            if let Some(_hit) =
+                scene.intersect(scene.camera.get_position(), normalized_ray_direction)
+            {
+                // TODO: character selection logic goes here
+                buffer.set_cell(Cell::default(row, col));
+            }
         }
     }
 
+    buffer.draw_to_stdout()?;
     Ok(())
-}
-
-fn render_frame(rng: &mut ThreadRng, rows: u16, cols: u16) -> std::io::Result<()> {
-    let mut buffer = stdout();
-
-    buffer.execute(terminal::Clear(terminal::ClearType::All))?;
-
-    // wireframe
-    for x in 0..=cols {
-        buffer.plot(x, 0, '@')?;
-        buffer.plot(x, rows, '@')?;
-    }
-
-    for y in 1..rows - 1 {
-        buffer.plot(0, y, '$')?;
-        buffer.plot(cols, y, '$')?;
-    }
-
-    // pick a random point, then draw a line some random offset away
-    let offset = 5;
-    let rand_col = rng.random_range(1..cols);
-    let rand_row = rng.random_range(1..rows);
-
-    let rand_offset_x = (rand_col + rng.random_range(1..=offset)).clamp(rand_col, cols);
-    let rand_offset_y = (rand_row + rng.random_range(1..=offset)).clamp(rand_row, rows);
-
-    plot_line(
-        &mut buffer,
-        Point(rand_col, rand_row),
-        Point(rand_offset_x, rand_offset_y),
-        '@',
-    )?;
-
-    buffer.flush()
 }
 
 fn main() -> std::io::Result<()> {
@@ -127,11 +192,23 @@ fn main() -> std::io::Result<()> {
     let mut samples: u64 = 0;
     let mut elapsed_sums: u128 = 0;
 
+    // TODO: how to deal with resizing?
+    // guess we would have to reallocate the framebuf on-demand; maybe
+    // detect when resizing then only reallocate then
+    let (cols, rows) = terminal::size()?;
+    let mut framebuf = FrameBuffer::new(rows, cols);
+
+    let camera = Camera::new(Vec3::new(0.0, 0.0, -5.0), Vec3::ORIGIN, Camera::PI / 2.0);
+    let mut scene = Scene::new(camera);
+
+    // sphere at origin, radius 1
+    let sphere = Sphere::new(Vec3::ORIGIN, 1.0);
+    scene.register_shape(Shape::Sphere(sphere));
+
     while running.load(Ordering::SeqCst) {
         let start_time = Instant::now();
 
-        let (cols, rows) = terminal::size()?;
-        render_frame(&mut rng, rows, cols)?;
+        render_frame(&mut framebuf, &mut scene, &mut rng).expect("fatal: unable to render frame");
 
         let end_time = Instant::now();
         let elapsed = end_time.duration_since(start_time);
