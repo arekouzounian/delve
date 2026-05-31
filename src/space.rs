@@ -6,6 +6,7 @@ use crate::vector::Vec3;
 pub struct Camera {
     position: Vec3,
     target: Vec3,
+    pub velocity: Vec3,
     fov_radians: f32,
 }
 
@@ -19,6 +20,7 @@ impl Camera {
         Self {
             position,
             target,
+            velocity: Vec3::ORIGIN,
             fov_radians,
         }
     }
@@ -36,11 +38,46 @@ impl Camera {
     }
 
     pub fn right_normal(&self) -> Vec3 {
-        Vec3::cross_product(&self.forward_normal(), &Self::WORLD_UP).normalize()
+        Vec3::cross_product(&Self::WORLD_UP, &self.forward_normal()).normalize()
     }
 
     pub fn up_normal(&self) -> Vec3 {
         Vec3::cross_product(&self.right_normal(), &self.forward_normal())
+    }
+
+    pub fn apply_force(&mut self, force_vec: Vec3) {
+        self.position += force_vec;
+        self.target += force_vec;
+    }
+
+    pub fn apply_yaw(&mut self, angle_rads: f32) {
+        let forward = self.target - self.position;
+        let yawed = Vec3::new(
+            forward.get_x() * angle_rads.cos() - forward.get_z() * angle_rads.sin(),
+            forward.get_y(),
+            forward.get_x() * angle_rads.sin() + forward.get_z() * angle_rads.cos(),
+        );
+
+        self.target = self.position + yawed;
+    }
+
+    // positive angle goes up, negative goes down
+    pub fn apply_pitch(&mut self, angle_rads: f32) {
+        let forward = self.target - self.position;
+        let right = self.right_normal();
+        // rodrigues' rotation formula, i guess
+        // rodrigues was onto something
+        let pitched = forward.scalar_multiply(angle_rads.cos())
+            + Vec3::cross_product(&right, &forward).scalar_multiply(angle_rads.sin())
+            + right.scalar_multiply(right.dot(forward) * (1.0 - angle_rads.cos()));
+
+        let new_forward = pitched.normalize();
+        let vertical = new_forward.dot(Self::WORLD_UP);
+        if vertical.abs() > 0.99 {
+            return; // clamp
+        }
+
+        self.target = self.position + pitched;
     }
 }
 
@@ -64,6 +101,11 @@ impl Sphere {
         Self { position, radius }
     }
 
+    /// The way this works is by solving for the points that the ray would
+    /// collide with the sphere. In this case, we only return a collision
+    /// if there are exactly two points that the ray collides with the sphere
+    /// (entry and exit point), and those points are both positive (in front of the camera).
+    /// the collision is at the closest point, the entry.
     /// ray_direction should be normalized
     pub fn intersect(&self, ray_origin: Vec3, ray_direction_normal: Vec3) -> Option<Collision> {
         let origin_center_diff = ray_origin - self.position;

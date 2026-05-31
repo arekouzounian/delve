@@ -1,12 +1,17 @@
 use std::io::{Stdout, Write, stdout};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use std::thread::sleep;
+use std::thread::{self, sleep};
 use std::time::{Duration, Instant};
 
-use crossterm::{ExecutableCommand, QueueableCommand, cursor, style, terminal};
+use crossterm::{
+    ExecutableCommand, QueueableCommand, cursor,
+    event::{self, KeyCode},
+    style, terminal,
+};
 use rand::prelude::*;
 
 use crate::space::{Camera, Scene, Shape, Sphere};
@@ -21,6 +26,18 @@ const MS_PER_TICK: Duration = Duration::from_millis(1000 / FRAMES_PER_SECOND);
 
 // adjust depending on terminal? or is it standard?
 const CELL_WIDTH_TO_HEIGHT_RATIO: f32 = 0.5;
+const MAX_EVENTS_PER_FRAME: u8 = 16;
+
+// closer to 1 -> less decay
+const DECAY_SCALE: f32 = 0.9;
+
+// larger than 1 -> increase force
+// < 1 -> decrease force
+const INPUT_SCALE: f32 = 0.01;
+
+const VELOCITY_THRESHOLD: f32 = 0.0001;
+
+const ROTATION_PER_FRAME_RADIANS: f32 = 0.05;
 
 pub trait BufType: Write + ExecutableCommand + QueueableCommand {}
 impl<T: Write + ExecutableCommand + QueueableCommand> BufType for T {}
@@ -129,6 +146,7 @@ impl FrameBuffer {
 }
 
 fn setup() -> std::io::Result<()> {
+    terminal::enable_raw_mode()?;
     stdout()
         .queue(cursor::DisableBlinking)?
         .queue(cursor::Hide)?
@@ -138,6 +156,7 @@ fn setup() -> std::io::Result<()> {
 }
 
 fn teardown() -> std::io::Result<()> {
+    terminal::disable_raw_mode()?;
     stdout()
         .queue(terminal::Clear(terminal::ClearType::Purge))?
         .queue(cursor::MoveTo(0, 0))?
@@ -151,11 +170,23 @@ fn teardown() -> std::io::Result<()> {
     Ok(())
 }
 
+pub enum Movement {
+    Forward,
+    Backward,
+    Left,
+    Right,
+    PitchUp,
+    PitchDown,
+    YawLeft,
+    YawRight,
+}
+
 /// swaps buffers after
 fn render_frame(
     prv_buf: &mut FrameBuffer,
     buffer: &mut FrameBuffer,
     scene: &mut Scene,
+    input_channel: &Receiver<Movement>,
     rng: &mut ThreadRng,
 ) -> std::io::Result<()> {
     buffer.clear();
@@ -169,6 +200,48 @@ fn render_frame(
     let forward_normal = scene.camera.forward_normal();
     let right_normal = scene.camera.right_normal();
     let up_normal = scene.camera.up_normal();
+
+    // drain event queue
+    let mut camera_force = Vec3::ORIGIN;
+    let mut target_transform = Vec3::ORIGIN;
+    for _ in 0..MAX_EVENTS_PER_FRAME {
+        match input_channel.try_recv() {
+            Ok(m) => match m {
+                Movement::Forward => {
+                    camera_force += forward_normal;
+                }
+                Movement::Backward => {
+                    camera_force -= forward_normal;
+                }
+                Movement::Right => {
+                    camera_force += right_normal;
+                }
+                Movement::Left => {
+                    camera_force -= right_normal;
+                }
+                Movement::PitchUp => {
+                    scene.camera.apply_pitch(ROTATION_PER_FRAME_RADIANS);
+                }
+                Movement::PitchDown => {
+                    scene.camera.apply_pitch(-ROTATION_PER_FRAME_RADIANS);
+                }
+                Movement::YawLeft => {
+                    scene.camera.apply_yaw(ROTATION_PER_FRAME_RADIANS);
+                }
+                Movement::YawRight => {
+                    scene.camera.apply_yaw(-ROTATION_PER_FRAME_RADIANS);
+                }
+            },
+            Err(_) => break,
+        }
+    }
+
+    scene.camera.velocity = scene.camera.velocity.scalar_multiply(DECAY_SCALE)
+        + camera_force.scalar_multiply(INPUT_SCALE);
+
+    if scene.camera.velocity.dot(scene.camera.velocity) > VELOCITY_THRESHOLD {
+        scene.camera.apply_force(scene.camera.velocity);
+    }
 
     for row in 0..buffer.rows() {
         for col in 0..buffer.cols() {
@@ -200,6 +273,64 @@ fn render_frame(
     Ok(())
 }
 
+/*
+* Listen for input. if we encounter desirable input, send over the channel
+* to the render loop.
+*
+* render loop slowly grows the magnitude of a vector in each direction, or
+* drains it with no input.
+*/
+fn listen_for_input(
+    running_flag: Arc<AtomicBool>,
+    input_channel: Sender<Movement>,
+) -> std::io::Result<()> {
+    let last_result = loop {
+        let new_event = event::read();
+
+        if let Err(e) = new_event {
+            break Err(e);
+        }
+
+        let mut next_movement = None;
+
+        match new_event.unwrap() {
+            event::Event::Key(key_event) => match key_event.code {
+                KeyCode::Esc => break Ok(()),
+                KeyCode::Up => next_movement = Some(Movement::PitchUp),
+                KeyCode::Down => next_movement = Some(Movement::PitchDown),
+                KeyCode::Left => next_movement = Some(Movement::YawLeft),
+                KeyCode::Right => next_movement = Some(Movement::YawRight),
+                KeyCode::Char(c) => {
+                    if c.to_lowercase().eq('q'.to_lowercase()) {
+                        break Ok(());
+                    } else if c.to_lowercase().eq('w'.to_lowercase()) {
+                        next_movement = Some(Movement::Forward);
+                    } else if c.to_lowercase().eq('a'.to_lowercase()) {
+                        next_movement = Some(Movement::Left);
+                    } else if c.to_lowercase().eq('s'.to_lowercase()) {
+                        next_movement = Some(Movement::Backward);
+                    } else if c.to_lowercase().eq('d'.to_lowercase()) {
+                        next_movement = Some(Movement::Right);
+                    }
+                }
+
+                _ => (),
+            },
+            _ => (),
+        }
+
+        if let Some(m) = next_movement
+            && let Err(e) = input_channel.send(m)
+        {
+            break Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, e));
+        }
+    };
+
+    running_flag.store(false, Ordering::SeqCst);
+
+    last_result
+}
+
 fn main() -> std::io::Result<()> {
     setup()?;
 
@@ -207,10 +338,9 @@ fn main() -> std::io::Result<()> {
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();
 
-    ctrlc::set_handler(move || {
-        running_clone.store(false, Ordering::SeqCst);
-    })
-    .expect("unable to set ctrl-c handler!");
+    let (send, recv) = mpsc::channel();
+
+    let input_thread = thread::spawn(move || listen_for_input(running_clone, send));
 
     let profiling_enabled = cfg!(profiling_enabled);
     let mut samples: u64 = 0;
@@ -231,26 +361,32 @@ fn main() -> std::io::Result<()> {
     let sphere = Sphere::new(Vec3::ORIGIN, 1.0);
     scene.register_shape(id.clone(), Shape::Sphere(sphere));
 
-    // after 5 seconds, pick another random vec
-    let mut random_direction = Vec3::from_random(&mut rng).scalar_multiply(0.20);
-    let mut frame_counter = 0;
-    let seconds = 1;
-    let frame_max = FRAMES_PER_SECOND * seconds; // 10 seconds
+    // after 1 seconds, pick another random vec
+    // let mut random_direction = Vec3::from_random(&mut rng).scalar_multiply(0.20);
+    // let mut frame_counter = 0;
+    // let seconds = 1;
+    // let frame_max = FRAMES_PER_SECOND * seconds; // 10 seconds
 
     while running.load(Ordering::SeqCst) {
         let start_time = Instant::now();
 
-        render_frame(&mut prev_framebuf, &mut curr_framebuf, &mut scene, &mut rng)
-            .expect("fatal: unable to render frame");
+        render_frame(
+            &mut prev_framebuf,
+            &mut curr_framebuf,
+            &mut scene,
+            &recv,
+            &mut rng,
+        )
+        .expect("fatal: unable to render frame");
 
-        match scene
-            .get_shape_mut(&id)
-            .expect("what happened to my sphere")
-        {
-            Shape::Sphere(s) => {
-                s.apply_force(random_direction);
-            }
-        }
+        // match scene
+        //     .get_shape_mut(&id)
+        //     .expect("what happened to my sphere")
+        // {
+        //     Shape::Sphere(s) => {
+        //         s.apply_force(random_direction);
+        //     }
+        // }
 
         let end_time = Instant::now();
         let elapsed = end_time.duration_since(start_time);
@@ -260,17 +396,19 @@ fn main() -> std::io::Result<()> {
             samples += 1;
         }
 
-        frame_counter += 1;
-        frame_counter %= frame_max;
+        // frame_counter += 1;
+        // frame_counter %= frame_max;
 
-        if frame_counter == 0 {
-            random_direction = Vec3::from_random(&mut rng).scalar_multiply(0.20);
-        }
+        // if frame_counter == 0 {
+        //     random_direction = Vec3::from_random(&mut rng).scalar_multiply(0.20);
+        // }
 
         if elapsed < MS_PER_TICK {
             sleep(MS_PER_TICK - elapsed);
         }
     }
+
+    let _ = input_thread.join().expect("something went wrong");
 
     teardown()?;
 

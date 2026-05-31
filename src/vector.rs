@@ -1,7 +1,7 @@
 use rand::prelude::*;
-use std::ops::{Add, Sub};
+use std::ops::{Add, AddAssign, Sub, SubAssign};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec3 {
     x: f32,
     y: f32,
@@ -17,6 +17,16 @@ impl Vec3 {
 
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
+    }
+
+    pub fn get_x(&self) -> f32 {
+        self.x
+    }
+    pub fn get_y(&self) -> f32 {
+        self.y
+    }
+    pub fn get_z(&self) -> f32 {
+        self.z
     }
 
     // a = a_1(x) + a_2(y) + a_3(z)
@@ -79,6 +89,14 @@ impl Add for Vec3 {
     }
 }
 
+impl AddAssign for Vec3 {
+    fn add_assign(&mut self, rhs: Self) {
+        self.x += rhs.x;
+        self.y += rhs.y;
+        self.z += rhs.z;
+    }
+}
+
 impl Sub for Vec3 {
     type Output = Self;
 
@@ -88,5 +106,13 @@ impl Sub for Vec3 {
             y: self.y - other.y,
             z: self.z - other.z,
         }
+    }
+}
+
+impl SubAssign for Vec3 {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.x -= rhs.x;
+        self.y -= rhs.y;
+        self.z -= rhs.z;
     }
 }

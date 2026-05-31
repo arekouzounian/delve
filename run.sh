@@ -25,6 +25,6 @@ if [ "$PROFILE" -eq 1 ]; then
   export RUSTFLAGS="$RUSTFLAGS --cfg profiling_enabled"
 fi
 
-trap reset SIGINT SIGTERM EXIT
-
+trap reset SIGINT
 cargo run
+reset
