@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::util::min;
 use crate::vector::Vec3;
 
@@ -96,6 +98,10 @@ impl Sphere {
             length_coefficient,
         })
     }
+
+    pub fn apply_force(&mut self, force_vec: Vec3) {
+        self.position = self.position + force_vec;
+    }
 }
 
 pub enum Shape {
@@ -104,7 +110,7 @@ pub enum Shape {
 
 pub struct Scene {
     pub camera: Camera,
-    objects: Vec<Shape>,
+    objects: HashMap<String, Shape>,
 }
 
 impl Scene {
@@ -112,18 +118,22 @@ impl Scene {
     pub fn new(camera: Camera) -> Self {
         Self {
             camera,
-            objects: Vec::new(),
+            objects: HashMap::new(),
         }
     }
 
     // TODO: object de-registration/ID tracking
-    pub fn register_shape(&mut self, shape: Shape) {
-        self.objects.push(shape);
+    pub fn register_shape(&mut self, key: String, shape: Shape) {
+        self.objects.insert(key, shape);
+    }
+
+    pub fn get_shape_mut(&mut self, key: &str) -> Option<&mut Shape> {
+        self.objects.get_mut(key)
     }
 
     // TODO: naively checks all shapes; should optimize this
     pub fn intersect(&mut self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
-        for shape in &self.objects {
+        for (_id, shape) in &self.objects {
             let result = match shape {
                 Shape::Sphere(s) => s.intersect(ray_origin, ray_direction),
             };
@@ -136,4 +146,3 @@ impl Scene {
         None
     }
 }
-

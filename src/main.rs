@@ -16,7 +16,7 @@ mod space;
 mod util;
 mod vector;
 
-const FRAMES_PER_SECOND: u64 = 1;
+const FRAMES_PER_SECOND: u64 = 30;
 const MS_PER_TICK: Duration = Duration::from_millis(1000 / FRAMES_PER_SECOND);
 
 // adjust depending on terminal? or is it standard?
@@ -25,7 +25,7 @@ const CELL_WIDTH_TO_HEIGHT_RATIO: f32 = 0.5;
 pub trait BufType: Write + ExecutableCommand + QueueableCommand {}
 impl<T: Write + ExecutableCommand + QueueableCommand> BufType for T {}
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Cell {
     #[allow(unused)]
     brightness: f32,
@@ -68,18 +68,29 @@ impl FrameBuffer {
         self.inner_buf[row][col] = Some(c);
     }
 
+    pub fn get_cell(&self, row: usize, col: usize) -> &Option<Cell> {
+        assert!(row < self.inner_buf.len());
+        assert!(col < self.inner_buf[0].len());
+
+        &self.inner_buf[row][col]
+    }
+
     // clears stdout and sets all cells to None
     pub fn clear_all(&mut self) -> std::io::Result<()> {
         self.stdout_handle
             .execute(terminal::Clear(terminal::ClearType::All))?;
 
+        self.clear();
+
+        Ok(())
+    }
+
+    pub fn clear(&mut self) {
         for row in &mut self.inner_buf {
             for cell in row {
                 cell.take();
             }
         }
-
-        Ok(())
     }
 
     pub fn rows(&self) -> u16 {
@@ -90,16 +101,25 @@ impl FrameBuffer {
         self.inner_buf[0].len() as u16
     }
 
-    pub fn draw_to_stdout(&mut self) -> std::io::Result<()> {
+    pub fn draw_to_stdout(&mut self, prv_buf: &mut FrameBuffer) -> std::io::Result<()> {
         self.stdout_handle.queue(cursor::MoveTo(0, 0))?;
 
-        for curr_row in &self.inner_buf {
-            for curr_col in curr_row {
-                if let Some(cell) = curr_col {
+        for (curr_row, row_vec) in self.inner_buf.iter().enumerate() {
+            for (curr_col, cell) in row_vec.iter().enumerate() {
+                let prv_cell = prv_buf.get_cell(curr_row, curr_col);
+
+                if cell.ne(prv_cell) {
                     self.stdout_handle
-                        .queue(cursor::MoveTo(cell.col, cell.row))?;
-                    self.stdout_handle.queue(style::Print(cell.rune as char))?;
-                    // TODO: styled content + brightness?
+                        .queue(cursor::MoveTo(curr_col as u16, curr_row as u16))?;
+
+                    match cell {
+                        Some(c) => {
+                            self.stdout_handle.queue(style::Print(c.rune as char))?;
+                        }
+                        None => {
+                            self.stdout_handle.queue(style::Print(' '))?;
+                        }
+                    };
                 }
             }
         }
@@ -113,6 +133,7 @@ fn setup() -> std::io::Result<()> {
         .queue(cursor::DisableBlinking)?
         .queue(cursor::Hide)?
         .queue(terminal::DisableLineWrap)?
+        .queue(terminal::Clear(terminal::ClearType::Purge))?
         .flush()
 }
 
@@ -130,12 +151,14 @@ fn teardown() -> std::io::Result<()> {
     Ok(())
 }
 
+/// swaps buffers after
 fn render_frame(
+    prv_buf: &mut FrameBuffer,
     buffer: &mut FrameBuffer,
     scene: &mut Scene,
     rng: &mut ThreadRng,
 ) -> std::io::Result<()> {
-    buffer.clear_all()?;
+    buffer.clear();
 
     let width = buffer.cols() as f32;
     let height = buffer.rows() as f32;
@@ -172,7 +195,8 @@ fn render_frame(
         }
     }
 
-    buffer.draw_to_stdout()?;
+    buffer.draw_to_stdout(prv_buf)?;
+    std::mem::swap(buffer, prv_buf);
     Ok(())
 }
 
@@ -196,19 +220,37 @@ fn main() -> std::io::Result<()> {
     // guess we would have to reallocate the framebuf on-demand; maybe
     // detect when resizing then only reallocate then
     let (cols, rows) = terminal::size()?;
-    let mut framebuf = FrameBuffer::new(rows, cols);
+    let mut curr_framebuf = FrameBuffer::new(rows, cols);
+    let mut prev_framebuf = FrameBuffer::new(rows, cols);
 
     let camera = Camera::new(Vec3::new(0.0, 0.0, -5.0), Vec3::ORIGIN, Camera::PI / 2.0);
     let mut scene = Scene::new(camera);
 
     // sphere at origin, radius 1
+    let id = String::from("asdf");
     let sphere = Sphere::new(Vec3::ORIGIN, 1.0);
-    scene.register_shape(Shape::Sphere(sphere));
+    scene.register_shape(id.clone(), Shape::Sphere(sphere));
+
+    // after 5 seconds, pick another random vec
+    let mut random_direction = Vec3::from_random(&mut rng).scalar_multiply(0.20);
+    let mut frame_counter = 0;
+    let seconds = 1;
+    let frame_max = FRAMES_PER_SECOND * seconds; // 10 seconds
 
     while running.load(Ordering::SeqCst) {
         let start_time = Instant::now();
 
-        render_frame(&mut framebuf, &mut scene, &mut rng).expect("fatal: unable to render frame");
+        render_frame(&mut prev_framebuf, &mut curr_framebuf, &mut scene, &mut rng)
+            .expect("fatal: unable to render frame");
+
+        match scene
+            .get_shape_mut(&id)
+            .expect("what happened to my sphere")
+        {
+            Shape::Sphere(s) => {
+                s.apply_force(random_direction);
+            }
+        }
 
         let end_time = Instant::now();
         let elapsed = end_time.duration_since(start_time);
@@ -216,6 +258,13 @@ fn main() -> std::io::Result<()> {
         if profiling_enabled {
             elapsed_sums += elapsed.as_micros();
             samples += 1;
+        }
+
+        frame_counter += 1;
+        frame_counter %= frame_max;
+
+        if frame_counter == 0 {
+            random_direction = Vec3::from_random(&mut rng).scalar_multiply(0.20);
         }
 
         if elapsed < MS_PER_TICK {

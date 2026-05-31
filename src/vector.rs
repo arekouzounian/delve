@@ -1,3 +1,4 @@
+use rand::prelude::*;
 use std::ops::{Add, Sub};
 
 #[derive(Debug, Clone, Copy)]
@@ -54,6 +55,14 @@ impl Vec3 {
             x: self.x / magnitude,
             y: self.y / magnitude,
             z: self.z / magnitude,
+        }
+    }
+
+    pub fn from_random(rng: &mut ThreadRng) -> Self {
+        Self {
+            x: rng.random(),
+            y: rng.random(),
+            z: rng.random(),
         }
     }
 }
