@@ -14,7 +14,7 @@ use crossterm::{
 };
 use rand::prelude::*;
 
-use crate::space::{Camera, Scene, Shape, Sphere};
+use crate::space::{Camera, Light, Scene, Shape, Sphere};
 use crate::vector::Vec3;
 
 mod space;
@@ -39,6 +39,8 @@ const VELOCITY_THRESHOLD: f32 = 0.0001;
 
 const ROTATION_PER_FRAME_RADIANS: f32 = 0.05;
 
+const AMBIENT_LIGHTING: f32 = 0.10;
+
 pub trait BufType: Write + ExecutableCommand + QueueableCommand {}
 impl<T: Write + ExecutableCommand + QueueableCommand> BufType for T {}
 
@@ -52,12 +54,29 @@ pub struct Cell {
 }
 
 impl Cell {
+    pub const BRIGHTNESS_SCALE: [u8; 8] = [b'.', b':', b'-', b'+', b'*', b'#', b'%', b'@'];
+
+    pub fn select_from_brightness_scale(brightness: f32, scale: &[u8]) -> u8 {
+        let bucket = (brightness.clamp(0.0, 1.0) * ((scale.len() - 1) as f32)) as usize;
+        return scale[bucket];
+    }
+
     pub fn default(row: u16, col: u16) -> Self {
         Self {
             brightness: 1.0,
             row,
             col,
             rune: b'@',
+        }
+    }
+
+    pub fn with_brightness(row: u16, col: u16, brightness: f32) -> Self {
+        let rune = Cell::select_from_brightness_scale(brightness, &Cell::BRIGHTNESS_SCALE);
+        Self {
+            brightness,
+            row,
+            col,
+            rune,
         }
     }
 }
@@ -187,7 +206,7 @@ fn render_frame(
     buffer: &mut FrameBuffer,
     scene: &mut Scene,
     input_channel: &Receiver<Movement>,
-    rng: &mut ThreadRng,
+    _rng: &mut ThreadRng,
 ) -> std::io::Result<()> {
     buffer.clear();
 
@@ -196,14 +215,11 @@ fn render_frame(
 
     let aspect_ratio = (width / height) * CELL_WIDTH_TO_HEIGHT_RATIO;
 
-    // do we need to recompute these?
-    let forward_normal = scene.camera.forward_normal();
-    let right_normal = scene.camera.right_normal();
-    let up_normal = scene.camera.up_normal();
+    let (forward_normal, right_normal, up_normal) = scene.get_normals();
+    let camera = scene.get_camera_mut();
 
     // drain event queue
     let mut camera_force = Vec3::ORIGIN;
-    let mut target_transform = Vec3::ORIGIN;
     for _ in 0..MAX_EVENTS_PER_FRAME {
         match input_channel.try_recv() {
             Ok(m) => match m {
@@ -220,28 +236,31 @@ fn render_frame(
                     camera_force -= right_normal;
                 }
                 Movement::PitchUp => {
-                    scene.camera.apply_pitch(ROTATION_PER_FRAME_RADIANS);
+                    camera.apply_pitch(-ROTATION_PER_FRAME_RADIANS);
                 }
                 Movement::PitchDown => {
-                    scene.camera.apply_pitch(-ROTATION_PER_FRAME_RADIANS);
+                    camera.apply_pitch(ROTATION_PER_FRAME_RADIANS);
                 }
                 Movement::YawLeft => {
-                    scene.camera.apply_yaw(ROTATION_PER_FRAME_RADIANS);
+                    camera.apply_yaw(ROTATION_PER_FRAME_RADIANS);
                 }
                 Movement::YawRight => {
-                    scene.camera.apply_yaw(-ROTATION_PER_FRAME_RADIANS);
+                    camera.apply_yaw(-ROTATION_PER_FRAME_RADIANS);
                 }
             },
             Err(_) => break,
         }
     }
 
-    scene.camera.velocity = scene.camera.velocity.scalar_multiply(DECAY_SCALE)
-        + camera_force.scalar_multiply(INPUT_SCALE);
+    camera.velocity =
+        camera.velocity.scalar_multiply(DECAY_SCALE) + camera_force.scalar_multiply(INPUT_SCALE);
 
-    if scene.camera.velocity.dot(scene.camera.velocity) > VELOCITY_THRESHOLD {
-        scene.camera.apply_force(scene.camera.velocity);
+    if camera.velocity.dot(camera.velocity) > VELOCITY_THRESHOLD {
+        camera.apply_force(camera.velocity);
     }
+
+    // all movement should be done for camera at this point so we can cache location
+    let camera_position = scene.get_camera().get_position();
 
     for row in 0..buffer.rows() {
         for col in 0..buffer.cols() {
@@ -250,20 +269,20 @@ fn render_frame(
             let mut ndc_x = ((2.0 * col as f32) - width) / width;
             let mut ndc_y = (height - (2.0 * row as f32)) / height;
 
+            let fov_factor = scene.get_camera().fov_factor();
             // adjust for aspect ratio
-            ndc_x *= aspect_ratio * scene.camera.fov_factor();
-            ndc_y *= scene.camera.fov_factor();
+            ndc_x *= aspect_ratio * fov_factor;
+            ndc_y *= fov_factor;
 
-            let normalized_ray_direction = (forward_normal.clone()
+            let normalized_ray_direction = (forward_normal
                 + right_normal.scalar_multiply(ndc_x)
                 + up_normal.scalar_multiply(ndc_y))
             .normalize();
 
-            if let Some(_hit) =
-                scene.intersect(scene.camera.get_position(), normalized_ray_direction)
-            {
+            if let Some(hit) = scene.intersect(camera_position, normalized_ray_direction) {
                 // TODO: character selection logic goes here
-                buffer.set_cell(Cell::default(row, col));
+                let brightness = scene.lambertian_brightness(hit.get_surface_normal());
+                buffer.set_cell(Cell::with_brightness(row, col, brightness));
             }
         }
     }
@@ -354,18 +373,14 @@ fn main() -> std::io::Result<()> {
     let mut prev_framebuf = FrameBuffer::new(rows, cols);
 
     let camera = Camera::new(Vec3::new(0.0, 0.0, -5.0), Vec3::ORIGIN, Camera::PI / 2.0);
-    let mut scene = Scene::new(camera);
+    let mut scene = Scene::new(camera, AMBIENT_LIGHTING);
+
+    scene.register_light(Light::new(Vec3::new(1.0, 2.0, -1.0), 0.5));
 
     // sphere at origin, radius 1
     let id = String::from("asdf");
     let sphere = Sphere::new(Vec3::ORIGIN, 1.0);
     scene.register_shape(id.clone(), Shape::Sphere(sphere));
-
-    // after 1 seconds, pick another random vec
-    // let mut random_direction = Vec3::from_random(&mut rng).scalar_multiply(0.20);
-    // let mut frame_counter = 0;
-    // let seconds = 1;
-    // let frame_max = FRAMES_PER_SECOND * seconds; // 10 seconds
 
     while running.load(Ordering::SeqCst) {
         let start_time = Instant::now();
@@ -379,15 +394,6 @@ fn main() -> std::io::Result<()> {
         )
         .expect("fatal: unable to render frame");
 
-        // match scene
-        //     .get_shape_mut(&id)
-        //     .expect("what happened to my sphere")
-        // {
-        //     Shape::Sphere(s) => {
-        //         s.apply_force(random_direction);
-        //     }
-        // }
-
         let end_time = Instant::now();
         let elapsed = end_time.duration_since(start_time);
 
@@ -395,13 +401,6 @@ fn main() -> std::io::Result<()> {
             elapsed_sums += elapsed.as_micros();
             samples += 1;
         }
-
-        // frame_counter += 1;
-        // frame_counter %= frame_max;
-
-        // if frame_counter == 0 {
-        //     random_direction = Vec3::from_random(&mut rng).scalar_multiply(0.20);
-        // }
 
         if elapsed < MS_PER_TICK {
             sleep(MS_PER_TICK - elapsed);

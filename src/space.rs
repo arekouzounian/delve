@@ -42,7 +42,7 @@ impl Camera {
     }
 
     pub fn up_normal(&self) -> Vec3 {
-        Vec3::cross_product(&self.right_normal(), &self.forward_normal())
+        Vec3::cross_product(&self.forward_normal(), &self.right_normal())
     }
 
     pub fn apply_force(&mut self, force_vec: Vec3) {
@@ -53,9 +53,9 @@ impl Camera {
     pub fn apply_yaw(&mut self, angle_rads: f32) {
         let forward = self.target - self.position;
         let yawed = Vec3::new(
-            forward.get_x() * angle_rads.cos() - forward.get_z() * angle_rads.sin(),
-            forward.get_y(),
-            forward.get_x() * angle_rads.sin() + forward.get_z() * angle_rads.cos(),
+            forward.x * angle_rads.cos() - forward.z * angle_rads.sin(),
+            forward.y,
+            forward.x * angle_rads.sin() + forward.z * angle_rads.cos(),
         );
 
         self.target = self.position + yawed;
@@ -86,6 +86,8 @@ pub struct Sphere {
     radius: f32,
 }
 
+#[allow(unused)]
+/// do we need any of this other stuff? we may want to just return the surface normal
 pub struct Collision {
     collision_position: Vec3,
     surface_normal: Vec3,
@@ -94,6 +96,12 @@ pub struct Collision {
     // this gives us the position of the hit point
     // do we need this?
     length_coefficient: f32,
+}
+
+impl Collision {
+    pub fn get_surface_normal(&self) -> Vec3 {
+        self.surface_normal
+    }
 }
 
 impl Sphere {
@@ -140,27 +148,41 @@ impl Sphere {
             length_coefficient,
         })
     }
-
-    pub fn apply_force(&mut self, force_vec: Vec3) {
-        self.position = self.position + force_vec;
-    }
 }
 
 pub enum Shape {
     Sphere(Sphere),
 }
 
+pub struct Light {
+    direction: Vec3, // point towards light, not from
+    intensity: f32,  // 0.0-1.0
+}
+
+impl Light {
+    pub fn new(direction: Vec3, intensity: f32) -> Self {
+        Self {
+            direction: direction.normalize(),
+            intensity,
+        }
+    }
+}
+
 pub struct Scene {
-    pub camera: Camera,
+    camera: Camera,
     objects: HashMap<String, Shape>,
+    lights: Vec<Light>,
+    ambient_lighting: f32,
 }
 
 impl Scene {
     /// fov_rad: field of view angle, in radians
-    pub fn new(camera: Camera) -> Self {
+    pub fn new(camera: Camera, ambient_lighting: f32) -> Self {
         Self {
             camera,
             objects: HashMap::new(),
+            lights: Vec::new(),
+            ambient_lighting,
         }
     }
 
@@ -169,22 +191,59 @@ impl Scene {
         self.objects.insert(key, shape);
     }
 
-    pub fn get_shape_mut(&mut self, key: &str) -> Option<&mut Shape> {
-        self.objects.get_mut(key)
+    pub fn register_light(&mut self, light: Light) {
+        self.lights.push(light);
+    }
+
+    pub fn lambertian_brightness(&self, surface_normal: Vec3) -> f32 {
+        let diffuse = self
+            .lights
+            .iter()
+            .map(|light| surface_normal.dot(light.direction).max(0.0) * light.intensity)
+            .sum::<f32>();
+
+        (self.ambient_lighting + diffuse).min(1.0)
     }
 
     // TODO: naively checks all shapes; should optimize this
-    pub fn intersect(&mut self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
+    // maybe use rayon?
+    pub fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
+        let mut closest: Option<Collision> = None;
+
         for (_id, shape) in &self.objects {
             let result = match shape {
                 Shape::Sphere(s) => s.intersect(ray_origin, ray_direction),
             };
 
-            if result.is_some() {
-                return result;
+            if let Some(collision) = result {
+                match closest.take() {
+                    None => closest = Some(collision),
+                    Some(c) => {
+                        if c.length_coefficient > collision.length_coefficient {
+                            closest = Some(collision)
+                        }
+                    }
+                };
             }
         }
 
-        None
+        closest
+    }
+
+    /// Returns forward normal, right normal, up normal
+    pub fn get_normals(&self) -> (Vec3, Vec3, Vec3) {
+        (
+            self.camera.forward_normal(),
+            self.camera.right_normal(),
+            self.camera.up_normal(),
+        )
+    }
+
+    pub fn get_camera_mut(&mut self) -> &mut Camera {
+        &mut self.camera
+    }
+
+    pub fn get_camera(&self) -> &Camera {
+        &self.camera
     }
 }

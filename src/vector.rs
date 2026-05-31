@@ -3,9 +3,9 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec3 {
-    x: f32,
-    y: f32,
-    z: f32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
 }
 
 impl Vec3 {
@@ -17,16 +17,6 @@ impl Vec3 {
 
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
-    }
-
-    pub fn get_x(&self) -> f32 {
-        self.x
-    }
-    pub fn get_y(&self) -> f32 {
-        self.y
-    }
-    pub fn get_z(&self) -> f32 {
-        self.z
     }
 
     // a = a_1(x) + a_2(y) + a_3(z)
@@ -68,6 +58,7 @@ impl Vec3 {
         }
     }
 
+    #[allow(unused)]
     pub fn from_random(rng: &mut ThreadRng) -> Self {
         Self {
             x: rng.random(),
