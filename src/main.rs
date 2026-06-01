@@ -7,6 +7,7 @@ use std::sync::{
 use std::thread::{self, sleep};
 use std::time::{Duration, Instant};
 
+use crossterm::event::ModifierKeyCode;
 use crossterm::{
     ExecutableCommand, QueueableCommand, cursor,
     event::{self, KeyCode},
@@ -171,6 +172,9 @@ fn setup() -> std::io::Result<()> {
         .queue(cursor::Hide)?
         .queue(terminal::DisableLineWrap)?
         .queue(terminal::Clear(terminal::ClearType::Purge))?
+        .queue(event::PushKeyboardEnhancementFlags(
+            event::KeyboardEnhancementFlags::all(),
+        ))?
         .flush()
 }
 
@@ -181,10 +185,13 @@ fn teardown() -> std::io::Result<()> {
         .queue(cursor::MoveTo(0, 0))?
         .queue(cursor::EnableBlinking)?
         .queue(cursor::Show)?
+        .queue(event::PopKeyboardEnhancementFlags)?
         .flush()?;
 
-    let (cols, rows) = terminal::size()?;
-    println!("rows: {} cols: {}", rows, cols);
+    if cfg!(profiling_enabled) {
+        let (cols, rows) = terminal::size()?;
+        println!("rows: {} cols: {}", rows, cols);
+    }
 
     Ok(())
 }
@@ -194,6 +201,8 @@ pub enum Movement {
     Backward,
     Left,
     Right,
+    Up,
+    Down,
     PitchUp,
     PitchDown,
     YawLeft,
@@ -234,6 +243,12 @@ fn render_frame(
                 }
                 Movement::Left => {
                     camera_force -= right_normal;
+                }
+                Movement::Up => {
+                    camera_force += up_normal;
+                }
+                Movement::Down => {
+                    camera_force -= up_normal;
                 }
                 Movement::PitchUp => {
                     camera.apply_pitch(-ROTATION_PER_FRAME_RADIANS);
@@ -319,6 +334,11 @@ fn listen_for_input(
                 KeyCode::Down => next_movement = Some(Movement::PitchDown),
                 KeyCode::Left => next_movement = Some(Movement::YawLeft),
                 KeyCode::Right => next_movement = Some(Movement::YawRight),
+                KeyCode::Modifier(modifier) => match modifier {
+                    ModifierKeyCode::LeftShift => next_movement = Some(Movement::Up),
+                    ModifierKeyCode::LeftControl => next_movement = Some(Movement::Down),
+                    _ => (),
+                },
                 KeyCode::Char(c) => {
                     if c.to_lowercase().eq('q'.to_lowercase()) {
                         break Ok(());
@@ -372,15 +392,29 @@ fn main() -> std::io::Result<()> {
     let mut curr_framebuf = FrameBuffer::new(rows, cols);
     let mut prev_framebuf = FrameBuffer::new(rows, cols);
 
-    let camera = Camera::new(Vec3::new(0.0, 0.0, -5.0), Vec3::ORIGIN, Camera::PI / 2.0);
+    let camera = Camera::new(
+        Vec3::new(4.384, 0.0, -1.402),
+        Vec3::ORIGIN,
+        Camera::PI / 2.0,
+    );
     let mut scene = Scene::new(camera, AMBIENT_LIGHTING);
 
     scene.register_light(Light::new(Vec3::new(1.0, 2.0, -1.0), 0.5));
+    scene.register_light(Light::new(Vec3::new(-1.0, -2.0, 1.0), 0.6));
 
-    // sphere at origin, radius 1
-    let id = String::from("asdf");
-    let sphere = Sphere::new(Vec3::ORIGIN, 1.0);
-    scene.register_shape(id.clone(), Shape::Sphere(sphere));
+    // spheres starting at origin, increasing in radius by 0.1
+    let sphere_count = 5;
+    let distance_inc = 2.0;
+    let radius_inc = 0.2;
+    let start_pt = -sphere_count as f32;
+    for i in 0..sphere_count {
+        let id = format!("{}", i);
+        let sphere = Sphere::new(
+            Vec3::new(start_pt + (distance_inc * i as f32), 0.0, 0.0),
+            0.1 + (radius_inc * i as f32),
+        );
+        scene.register_shape(id, Shape::Sphere(sphere));
+    }
 
     while running.load(Ordering::SeqCst) {
         let start_time = Instant::now();
@@ -410,6 +444,13 @@ fn main() -> std::io::Result<()> {
     let _ = input_thread.join().expect("something went wrong");
 
     teardown()?;
+
+    if cfg!(profiling_enabled) {
+        println!(
+            "last camera position: {:?}",
+            scene.get_camera().get_position()
+        )
+    }
 
     if profiling_enabled {
         println!(

@@ -221,6 +221,8 @@ impl Scene {
                     Some(c) => {
                         if c.length_coefficient > collision.length_coefficient {
                             closest = Some(collision)
+                        } else {
+                            closest = Some(c)
                         }
                     }
                 };
