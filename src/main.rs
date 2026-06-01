@@ -12,7 +12,7 @@ use rand::prelude::*;
 
 use crate::constants::*;
 use crate::input::{apply_camera_forces, listen_for_input};
-use crate::space::{Camera, Cube, Light, Scene, Shape, Sphere};
+use crate::space::{Camera, Cube, Light, RectPrism, Scene, Shape, Sphere};
 use crate::vector::Vec3;
 
 mod constants;
@@ -278,6 +278,9 @@ fn main() -> std::io::Result<()> {
     let cube = Cube::new(1.0, Vec3::new(5.0, 0.0, 5.0));
 
     scene.register_shape(String::from("cube"), Shape::Cube(cube));
+
+    let prism = RectPrism::new(Vec3::new(1.0, 1.0, 10.0), Vec3::new(0.0, 0.0, 5.0));
+    scene.register_shape(String::from("idk"), Shape::RectPrism(prism));
 
     while running.load(Ordering::SeqCst) {
         let start_time = Instant::now();
