@@ -1,46 +1,25 @@
 use std::io::{Stdout, Write, stdout};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::atomic::AtomicU32;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
 use std::thread::{self, sleep};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use crossterm::event::ModifierKeyCode;
-use crossterm::{
-    ExecutableCommand, QueueableCommand, cursor,
-    event::{self, KeyCode},
-    style, terminal,
-};
+use crossterm::{ExecutableCommand, QueueableCommand, cursor, event, style, terminal};
 use rand::prelude::*;
 
-use crate::space::{Camera, Light, Scene, Shape, Sphere};
+use crate::constants::*;
+use crate::input::{apply_camera_forces, listen_for_input};
+use crate::space::{Camera, Cube, Light, Scene, Shape, Sphere};
 use crate::vector::Vec3;
 
+mod constants;
+mod input;
 mod space;
 mod util;
 mod vector;
-
-const FRAMES_PER_SECOND: u64 = 30;
-const MS_PER_TICK: Duration = Duration::from_millis(1000 / FRAMES_PER_SECOND);
-
-// adjust depending on terminal? or is it standard?
-const CELL_WIDTH_TO_HEIGHT_RATIO: f32 = 0.5;
-const MAX_EVENTS_PER_FRAME: u8 = 16;
-
-// closer to 1 -> less decay
-const DECAY_SCALE: f32 = 0.9;
-
-// larger than 1 -> increase force
-// < 1 -> decrease force
-const INPUT_SCALE: f32 = 0.01;
-
-const VELOCITY_THRESHOLD: f32 = 0.0001;
-
-const ROTATION_PER_FRAME_RADIANS: f32 = 0.05;
-
-const AMBIENT_LIGHTING: f32 = 0.10;
 
 pub trait BufType: Write + ExecutableCommand + QueueableCommand {}
 impl<T: Write + ExecutableCommand + QueueableCommand> BufType for T {}
@@ -196,25 +175,12 @@ fn teardown() -> std::io::Result<()> {
     Ok(())
 }
 
-pub enum Movement {
-    Forward,
-    Backward,
-    Left,
-    Right,
-    Up,
-    Down,
-    PitchUp,
-    PitchDown,
-    YawLeft,
-    YawRight,
-}
-
 /// swaps buffers after
 fn render_frame(
     prv_buf: &mut FrameBuffer,
     buffer: &mut FrameBuffer,
     scene: &mut Scene,
-    input_channel: &Receiver<Movement>,
+    movement_flags: &Arc<AtomicU32>,
     _rng: &mut ThreadRng,
 ) -> std::io::Result<()> {
     buffer.clear();
@@ -224,58 +190,14 @@ fn render_frame(
 
     let aspect_ratio = (width / height) * CELL_WIDTH_TO_HEIGHT_RATIO;
 
-    let (forward_normal, right_normal, up_normal) = scene.get_normals();
-    let camera = scene.get_camera_mut();
-
-    // drain event queue
-    let mut camera_force = Vec3::ORIGIN;
-    for _ in 0..MAX_EVENTS_PER_FRAME {
-        match input_channel.try_recv() {
-            Ok(m) => match m {
-                Movement::Forward => {
-                    camera_force += forward_normal;
-                }
-                Movement::Backward => {
-                    camera_force -= forward_normal;
-                }
-                Movement::Right => {
-                    camera_force += right_normal;
-                }
-                Movement::Left => {
-                    camera_force -= right_normal;
-                }
-                Movement::Up => {
-                    camera_force += up_normal;
-                }
-                Movement::Down => {
-                    camera_force -= up_normal;
-                }
-                Movement::PitchUp => {
-                    camera.apply_pitch(-ROTATION_PER_FRAME_RADIANS);
-                }
-                Movement::PitchDown => {
-                    camera.apply_pitch(ROTATION_PER_FRAME_RADIANS);
-                }
-                Movement::YawLeft => {
-                    camera.apply_yaw(ROTATION_PER_FRAME_RADIANS);
-                }
-                Movement::YawRight => {
-                    camera.apply_yaw(-ROTATION_PER_FRAME_RADIANS);
-                }
-            },
-            Err(_) => break,
-        }
-    }
-
-    camera.velocity =
-        camera.velocity.scalar_multiply(DECAY_SCALE) + camera_force.scalar_multiply(INPUT_SCALE);
-
-    if camera.velocity.dot(camera.velocity) > VELOCITY_THRESHOLD {
-        camera.apply_force(camera.velocity);
-    }
+    apply_camera_forces(
+        scene.get_camera_mut(),
+        movement_flags.load(Ordering::Relaxed),
+    );
 
     // all movement should be done for camera at this point so we can cache location
     let camera_position = scene.get_camera().get_position();
+    let (forward_normal, right_normal, up_normal) = scene.get_normals();
 
     for row in 0..buffer.rows() {
         for col in 0..buffer.cols() {
@@ -295,7 +217,6 @@ fn render_frame(
             .normalize();
 
             if let Some(hit) = scene.intersect(camera_position, normalized_ray_direction) {
-                // TODO: character selection logic goes here
                 let brightness = scene.lambertian_brightness(hit.get_surface_normal());
                 buffer.set_cell(Cell::with_brightness(row, col, brightness));
             }
@@ -307,69 +228,6 @@ fn render_frame(
     Ok(())
 }
 
-/*
-* Listen for input. if we encounter desirable input, send over the channel
-* to the render loop.
-*
-* render loop slowly grows the magnitude of a vector in each direction, or
-* drains it with no input.
-*/
-fn listen_for_input(
-    running_flag: Arc<AtomicBool>,
-    input_channel: Sender<Movement>,
-) -> std::io::Result<()> {
-    let last_result = loop {
-        let new_event = event::read();
-
-        if let Err(e) = new_event {
-            break Err(e);
-        }
-
-        let mut next_movement = None;
-
-        match new_event.unwrap() {
-            event::Event::Key(key_event) => match key_event.code {
-                KeyCode::Esc => break Ok(()),
-                KeyCode::Up => next_movement = Some(Movement::PitchUp),
-                KeyCode::Down => next_movement = Some(Movement::PitchDown),
-                KeyCode::Left => next_movement = Some(Movement::YawLeft),
-                KeyCode::Right => next_movement = Some(Movement::YawRight),
-                KeyCode::Modifier(modifier) => match modifier {
-                    ModifierKeyCode::LeftShift => next_movement = Some(Movement::Up),
-                    ModifierKeyCode::LeftControl => next_movement = Some(Movement::Down),
-                    _ => (),
-                },
-                KeyCode::Char(c) => {
-                    if c.to_lowercase().eq('q'.to_lowercase()) {
-                        break Ok(());
-                    } else if c.to_lowercase().eq('w'.to_lowercase()) {
-                        next_movement = Some(Movement::Forward);
-                    } else if c.to_lowercase().eq('a'.to_lowercase()) {
-                        next_movement = Some(Movement::Left);
-                    } else if c.to_lowercase().eq('s'.to_lowercase()) {
-                        next_movement = Some(Movement::Backward);
-                    } else if c.to_lowercase().eq('d'.to_lowercase()) {
-                        next_movement = Some(Movement::Right);
-                    }
-                }
-
-                _ => (),
-            },
-            _ => (),
-        }
-
-        if let Some(m) = next_movement
-            && let Err(e) = input_channel.send(m)
-        {
-            break Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, e));
-        }
-    };
-
-    running_flag.store(false, Ordering::SeqCst);
-
-    last_result
-}
-
 fn main() -> std::io::Result<()> {
     setup()?;
 
@@ -377,9 +235,10 @@ fn main() -> std::io::Result<()> {
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();
 
-    let (send, recv) = mpsc::channel();
+    let movement_flags = Arc::new(AtomicU32::new(0));
+    let mov_flags_clone = movement_flags.clone();
 
-    let input_thread = thread::spawn(move || listen_for_input(running_clone, send));
+    let input_thread = thread::spawn(move || listen_for_input(running_clone, mov_flags_clone));
 
     let profiling_enabled = cfg!(profiling_enabled);
     let mut samples: u64 = 0;
@@ -400,7 +259,7 @@ fn main() -> std::io::Result<()> {
     let mut scene = Scene::new(camera, AMBIENT_LIGHTING);
 
     scene.register_light(Light::new(Vec3::new(1.0, 2.0, -1.0), 0.5));
-    scene.register_light(Light::new(Vec3::new(-1.0, -2.0, 1.0), 0.6));
+    scene.register_light(Light::new(Vec3::new(1.0, 0.0, 0.0), 0.6));
 
     // spheres starting at origin, increasing in radius by 0.1
     let sphere_count = 5;
@@ -416,6 +275,10 @@ fn main() -> std::io::Result<()> {
         scene.register_shape(id, Shape::Sphere(sphere));
     }
 
+    let cube = Cube::new(1.0, Vec3::new(5.0, 0.0, 5.0));
+
+    scene.register_shape(String::from("cube"), Shape::Cube(cube));
+
     while running.load(Ordering::SeqCst) {
         let start_time = Instant::now();
 
@@ -423,7 +286,7 @@ fn main() -> std::io::Result<()> {
             &mut prev_framebuf,
             &mut curr_framebuf,
             &mut scene,
-            &recv,
+            &movement_flags,
             &mut rng,
         )
         .expect("fatal: unable to render frame");
