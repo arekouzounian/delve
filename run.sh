@@ -2,7 +2,7 @@
 set -e
 
 # assumes kitty
-CURR_FONT=$(sed -nr 's/font_size ([0-9]+)\.[0-9]+/\1/p' ~/.config/kitty/kitty.conf)
+CURR_FONT=$(sed -nr 's/^[[:space:]]*font_size ([0-9]+(\.[0-9]+)?).*/\1/p' ~/.config/kitty/kitty.conf)
 DEFAULT=${CURR_FONT:-14}
 
 FONT_SIZE=12

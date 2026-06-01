@@ -282,14 +282,16 @@ fn main() -> std::io::Result<()> {
     while running.load(Ordering::SeqCst) {
         let start_time = Instant::now();
 
-        render_frame(
+        if let Err(_e) = render_frame(
             &mut prev_framebuf,
             &mut curr_framebuf,
             &mut scene,
             &movement_flags,
             &mut rng,
-        )
-        .expect("fatal: unable to render frame");
+        ) {
+            running.store(false, Ordering::SeqCst);
+            break;
+        }
 
         let end_time = Instant::now();
         let elapsed = end_time.duration_since(start_time);

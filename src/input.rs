@@ -39,6 +39,8 @@ pub fn listen_for_input(
 
         if let Err(e) = new_event {
             break Err(e);
+        } else if !running_flag.load(Ordering::SeqCst) {
+            break Ok(()); // set externally, exit now
         }
 
         let mut next_movement = None;
