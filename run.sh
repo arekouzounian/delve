@@ -30,5 +30,5 @@ if [ "$PROFILE" -eq 1 ]; then
 fi
 
 trap reset SIGINT
-cargo run
+cargo run --release
 reset

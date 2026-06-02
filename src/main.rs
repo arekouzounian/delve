@@ -262,25 +262,24 @@ fn main() -> std::io::Result<()> {
     scene.register_light(Light::new(Vec3::new(1.0, 0.0, 0.0), 0.6));
 
     // spheres starting at origin, increasing in radius by 0.1
-    let sphere_count = 5;
-    let distance_inc = 2.0;
-    let radius_inc = 0.2;
-    let start_pt = -sphere_count as f32;
+    let sphere_count = 100;
+    let distance = 0.2;
+    let radius_inc = 0.5;
+    let base_radius = 0.1;
+    let mut curr_x = base_radius;
     for i in 0..sphere_count {
         let id = format!("{}", i);
-        let sphere = Sphere::new(
-            Vec3::new(start_pt + (distance_inc * i as f32), 0.0, 0.0),
-            0.1 + (radius_inc * i as f32),
-        );
+        let new_radius = base_radius + (radius_inc * i as f32);
+        let sphere = Sphere::new(Vec3::new(curr_x, 0.0, 0.0), new_radius);
         scene.register_shape(id, Shape::Sphere(sphere));
+
+        curr_x += distance + (new_radius * 2.0);
     }
 
-    let cube = Cube::new(1.0, Vec3::new(5.0, 0.0, 5.0));
-
-    scene.register_shape(String::from("cube"), Shape::Cube(cube));
-
-    let prism = RectPrism::new(Vec3::new(1.0, 1.0, 10.0), Vec3::new(0.0, 0.0, 5.0));
-    scene.register_shape(String::from("idk"), Shape::RectPrism(prism));
+    // let cube = Cube::new(1.0, Vec3::new(5.0, 0.0, 5.0));
+    // scene.register_shape(String::from("cube"), Shape::Cube(cube));
+    // let prism = RectPrism::new(Vec3::new(1.0, 1.0, 10.0), Vec3::new(0.0, 0.0, 5.0));
+    // scene.register_shape(String::from("idk"), Shape::RectPrism(prism));
 
     while running.load(Ordering::SeqCst) {
         let start_time = Instant::now();

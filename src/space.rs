@@ -214,11 +214,11 @@ impl RectPrism {
 
             let mut normal = Vec3::ORIGIN;
             if t_enter_x == t_enter {
-                normal.x = 1.0 * ray_direction.x.signum();
+                normal.x = 1.0 * -ray_direction.x.signum();
             } else if t_enter_y == t_enter {
-                normal.y = 1.0 * ray_direction.y.signum();
+                normal.y = 1.0 * -ray_direction.y.signum();
             } else {
-                normal.z = 1.0 * ray_direction.z.signum();
+                normal.z = 1.0 * -ray_direction.z.signum();
             }
 
             return Some(Collision {

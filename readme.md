@@ -17,7 +17,7 @@ No packaged binaries just yet. Just download the source and run:
 # curl www.virus.com | sh # just kidding
 git clone https://github.com/arekouzounian/delve/delve.git
 cd delve
-cargo run
+cargo run --release # don't forget release mode or else performance is brutal
 ```
 
 ## Controls
