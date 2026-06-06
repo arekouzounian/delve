@@ -5,10 +5,12 @@
 /// we can kinda get away with this by encoding the dimensions into the
 /// type parameters which is kinda nuts
 use std::fmt::Debug;
-use std::ops::{Add, AddAssign, Mul, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Mul, Sub, SubAssign, Deref, DerefMut};
 
 use num_traits::NumAssign;
 use rand::prelude::*;
+
+use crate::mat;
 
 pub trait NumericType: NumAssign + Copy + Clone + Debug {}
 impl<T: NumAssign + Copy + Clone + Debug> NumericType for T {}
@@ -121,6 +123,20 @@ where
         }
     }
 
+    pub fn identity() -> Matrix<f32, R, C> {
+        let mut m = Matrix::zero();
+
+        for r in 0..R {
+            for c in 0..C {
+                if r == c {
+                    m.inner[r][c] = 1.0f32;
+                }
+            }
+        }
+
+        m
+    }
+
     pub fn new(inner: [[T; C]; R]) -> Self {
         Self { inner }
     }
@@ -157,6 +173,28 @@ where
         }
 
         transpose
+    }
+
+    /// will panic if i > cols
+    pub fn col(&self, i: usize) -> Matrix<T, R, 1> {
+        let mut m = Matrix::zero();
+
+        for j in 0..C {
+            m.inner[j][0] = self.inner[i][j];
+        }
+
+        m
+    }
+
+    /// will panic if i > rows
+    pub fn row(&self, i: usize) -> Matrix<T, 1, C> {
+        let mut m = Matrix::zero();
+
+        for j in 0..R {
+            m.inner[0][j] = self.inner[j][i];
+        }
+
+        m
     }
 }
 
@@ -219,6 +257,57 @@ where
 
         multiplied_matrix
     }
+}
+
+pub struct Mat3(Matrix<f32, 3, 3>);
+
+impl Mat3 {
+    pub fn zero() -> Self {
+        Self(Matrix::<f32, 3, 3>::zero())
+    }
+
+    pub fn identity() -> Self {
+        Self(Matrix::<f32, 3, 3>::identity())
+    }
+
+    /// ive been trying to do this through the type system but its too much of a mess.
+    /// TODO: can we make this just use the matrix mult math without having extra allocs
+    /// from type conversions
+    /// idk look at this later it's probably horribly inefficient
+    pub fn apply(&self, rhs: Vec3) -> Vec3 {
+        Vec3::new(
+            Vec3::from(self.0.row(0)).dot(rhs),
+            Vec3::from(self.0.row(1)).dot(rhs),
+            Vec3::from(self.0.row(2)).dot(rhs),
+        )
+    }
+}
+
+impl From<Matrix<f32, 3, 3>> for Mat3 {
+    fn from(rhs: Matrix<f32, 3, 3>) -> Self {
+        Self(rhs)
+    }
+}
+
+impl From<Mat3> for Matrix<f32, 3, 3> {
+    fn from(rhs: Mat3) -> Matrix<f32, 3, 3> {
+        rhs.0
+    }
+}
+
+impl Deref for Mat3 {
+    type Target = Matrix<f32, 3, 3>;
+
+    fn deref(&self) -> &Matrix<f32, 3, 3> {
+        &self.0
+    }
+}
+
+impl DerefMut for Mat3 {
+    fn deref_mut(&mut self) -> &mut Matrix<f32, 3, 3> {
+        &mut self.0
+    }
+
 }
 
 // TODO: refactor using mat
@@ -329,6 +418,43 @@ impl SubAssign for Vec3 {
     }
 }
 
+impl<T> From<Matrix<T, 3, 1>> for Vec3
+where T: NumericType + Into<f32>
+{
+    fn from(other: Matrix<T, 3, 1>) -> Self {
+        Vec3::new(
+            other.inner[0][0].into(),
+            other.inner[1][0].into(),
+            other.inner[2][0].into(),
+        )
+    }
+}
+
+impl<T> From<Matrix<T, 1, 3>> for Vec3 
+where T: NumericType + Into<f32>
+{
+    fn from(other: Matrix<T, 1, 3>) -> Self {
+        Vec3::new(
+            other.inner[0][0].into(),
+            other.inner[0][1].into(),
+            other.inner[0][2].into(),
+        )
+    }
+}
+
+impl<T> From<Vec3> for Matrix<T, 3, 1>
+where T: NumericType + From<f32>
+{
+    fn from(other: Vec3) -> Self {
+        mat![
+            [T::from(other.x)],
+            [T::from(other.y)],
+            [T::from(other.z)],
+        ]
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     #[allow(unused)]
@@ -365,5 +491,23 @@ mod tests {
         ];
 
         assert!(m.transpose() == expected);
+    }
+
+    #[test]
+    fn test_conversion() {
+        let m = mat![[1.0], [2.0], [3.0]];
+        let v = Vec3::new(1.0, 2.0, 3.0);
+
+        assert!(Vec3::from(m) == v);
+    }
+
+    #[test]
+    fn test_conversion_with_differing_types() {
+        let m = mat![[1u16], [2u16], [3u16]];
+        let v = Vec3::new(1.0, 2.0, 3.0);
+
+        let vec = Vec3::from(m);
+
+        assert!(vec == v);
     }
 }

@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::math::Vec3;
+use crate::math::{Vec3, Mat3};
 use crate::{max, min};
 
 #[allow(unused)]
@@ -102,6 +102,9 @@ impl DerefMut for Cube {
 }
 
 pub struct RectPrism {
+    /// NOT column-vector form; storing the transpose
+    /// [[right], [up], [forward]]
+    rotation: Mat3,
     /// width, height, length
     dimensions: Vec3,
     center: Vec3,
@@ -109,7 +112,7 @@ pub struct RectPrism {
 
 impl RectPrism {
     pub fn new(dimensions: Vec3, center: Vec3) -> Self {
-        Self { dimensions, center }
+        Self { rotation: Mat3::identity(), dimensions, center }
     }
 
     /// slab method; axis-aligned cube
@@ -117,21 +120,27 @@ impl RectPrism {
     /// is equal to center +- height/2
     /// cube = 3 sets of parallel, axis-aligned planes
     pub fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
+        let rotation_transpose: Mat3 = self.rotation.transpose().into();
+
+        // transform into local coordinate space
+        let ray_origin = rotation_transpose.apply(ray_origin - self.center);
+        let ray_direction = rotation_transpose.apply(ray_direction);
+
         let hx = self.dimensions.x / 2.0;
-        let t1 = (self.center.x - hx - ray_origin.x) / ray_direction.x;
-        let t2 = (self.center.x + hx - ray_origin.x) / ray_direction.x;
+        let t1 = (-hx - ray_origin.x) / ray_direction.x;
+        let t2 = (hx - ray_origin.x) / ray_direction.x;
         let t_enter_x = min!(t1, t2);
         let t_exit_x = max!(t1, t2);
 
         let hy = self.dimensions.y / 2.0;
-        let t1 = (self.center.y - hy - ray_origin.y) / ray_direction.y;
-        let t2 = (self.center.y + hy - ray_origin.y) / ray_direction.y;
+        let t1 = (-hy - ray_origin.y) / ray_direction.y;
+        let t2 = (hy - ray_origin.y) / ray_direction.y;
         let t_enter_y = min!(t1, t2);
         let t_exit_y = max!(t1, t2);
 
         let hz = self.dimensions.z / 2.0;
-        let t1 = (self.center.z - hz - ray_origin.z) / ray_direction.z;
-        let t2 = (self.center.z + hz - ray_origin.z) / ray_direction.z;
+        let t1 = (-hz - ray_origin.z) / ray_direction.z;
+        let t2 = (hz - ray_origin.z) / ray_direction.z;
         let t_enter_z = min!(t1, t2);
         let t_exit_z = max!(t1, t2);
 
@@ -139,7 +148,7 @@ impl RectPrism {
         let t_exit = min!(t_exit_x, t_exit_y, t_exit_z);
 
         if t_enter <= t_exit && t_exit > 0.0 {
-            let position = ray_origin + ray_direction.scalar_multiply(t_enter);
+            let mut position = ray_origin + ray_direction.scalar_multiply(t_enter);
 
             let mut normal = Vec3::ORIGIN;
             if t_enter_x == t_enter {
@@ -149,6 +158,11 @@ impl RectPrism {
             } else {
                 normal.z = 1.0 * -ray_direction.z.signum();
             }
+
+            // we are still in local AABB coordinate space so now we need to rotate out
+            // inverse == transpose
+            position = self.rotation.apply(position) + self.center;
+            normal = self.rotation.apply(normal);
 
             return Some(Collision {
                 collision_position: position,
