@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-pub const FRAMES_PER_SECOND: u64 = 30;
+pub const FRAMES_PER_SECOND: u64 = 60;
 pub const MS_PER_TICK: Duration = Duration::from_millis(1000 / FRAMES_PER_SECOND);
 
 // adjust depending on terminal? or is it standard?

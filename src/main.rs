@@ -32,6 +32,7 @@ fn main() -> std::io::Result<()> {
     scene.register_shape(String::from("friendly_sphere"), Shape::Sphere(sphere));
 
     let cube = Cube::new(1.0, Vec3::new(5.0, 0.0, 5.0));
+
     scene.register_shape(String::from("evil_cube"), Shape::Cube(cube));
 
     let engine = DelveEngine::new(scene, movement_flags, running)?;

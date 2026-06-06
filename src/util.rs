@@ -5,13 +5,13 @@ macro_rules! mat {
             [ $($elem:expr),+ $(,)? ]
         ),+ $(,)?
     ) => {
-        $crate::math::Matrix {
-            inner: [
+        $crate::math::Matrix::new(
+            [
                 $(
                     [ $($elem),+ ],
                 )+
             ]
-        }
+        )
     };
 }
 

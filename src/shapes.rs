@@ -83,7 +83,11 @@ impl Cube {
     }
 
     pub fn sin_hover(&mut self, start: std::time::Instant) {
-        self.0.center.y = 0.3 * ((start.elapsed().as_secs_f32() * 2.0).sin());
+        let theta = start.elapsed().as_secs_f32();
+
+        self.0.center.y = 0.3 * ((theta * 2.0).sin());
+
+        self.set_rotation(Mat3::from_axis_angle(Vec3::Y, theta));
     }
 }
 
@@ -113,6 +117,10 @@ pub struct RectPrism {
 impl RectPrism {
     pub fn new(dimensions: Vec3, center: Vec3) -> Self {
         Self { rotation: Mat3::identity(), dimensions, center }
+    }
+
+    pub fn set_rotation(&mut self, r: Mat3) {
+        self.rotation = r;
     }
 
     /// slab method; axis-aligned cube

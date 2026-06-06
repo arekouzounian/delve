@@ -281,6 +281,25 @@ impl Mat3 {
             Vec3::from(self.0.row(2)).dot(rhs),
         )
     }
+
+    /// returns a rotation matrix; when you apply it to a vector, it
+    /// rotates that vector by `angle` around the given axis.
+    pub fn from_axis_angle(axis: Vec3, angle: f32) -> Self {
+        let n = axis.normalize();
+        let c = angle.cos();
+        let s = angle.sin();
+        let t = 1.0 - c;
+
+        let n_x_squared = n.x * n.x;
+        let n_y_squared = n.y * n.y;
+        let n_z_squared = n.z * n.z;
+
+        Mat3(mat![
+            [c + (n_x_squared * t), (n.x * n.y * t) - (n.z * s), (n.x * n.z * t) + (n.y * s)],
+            [(n.y * n.x * t) + (n.z * s), c + (n_y_squared * t), (n.y * n.z * t) - (n.x * s)],
+            [(n.z * n.x * t) - (n.y * s), (n.z * n.y * t) + (n.x * s), c + (n_z_squared * t)],
+        ])
+    }
 }
 
 impl From<Matrix<f32, 3, 3>> for Mat3 {
@@ -323,6 +342,22 @@ impl Vec3 {
         x: 0.0,
         y: 0.0,
         z: 0.0,
+    };
+
+    pub const X: Self = Self {
+        x: 1.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    pub const Y: Self = Self {
+        x: 0.0,
+        y: 1.0,
+        z: 0.0,
+    };
+    pub const Z: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 1.0,
     };
 
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
