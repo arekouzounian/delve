@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::math::Vec3;
+use crate::math::{Vec3, Mat3};
 use crate::shapes::{Collision, Shape};
 
 pub struct Camera {
@@ -136,6 +136,7 @@ impl Scene {
         for shape in self.objects.values_mut() {
             match shape {
                 Shape::Cube(c) => c.sin_hover(self.start),
+                Shape::RectPrism(r) => r.set_rotation(Mat3::from_axis_angle(Vec3::Z, self.start.elapsed().as_secs_f32())),
                 _ => (),
             }
         }

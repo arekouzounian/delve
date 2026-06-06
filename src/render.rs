@@ -18,36 +18,27 @@ impl<T: Write + ExecutableCommand + QueueableCommand> BufType for T {}
 pub struct Cell {
     #[allow(unused)]
     brightness: f32,
-    row: u16,
-    col: u16,
-    rune: u8,
+    rune: char,
 }
 
 impl Cell {
-    pub const BRIGHTNESS_SCALE: [u8; 8] = [b'.', b':', b'-', b'+', b'*', b'#', b'%', b'@'];
+    pub const DEFAULT_BRIGHTNESS_SCALE: [char; 8] = ['.', ':', '-', '+', '*', '#', '%', '@'];
+    // pub const BRIGHTNESS_SCALE: [char; 4] = ['░', '▒', '▓', '█'];
 
-    pub fn select_from_brightness_scale(brightness: f32, scale: &[u8]) -> u8 {
+    pub fn select_from_brightness_scale(brightness: f32, scale: &[char]) -> char {
         let bucket = (brightness.clamp(0.0, 1.0) * ((scale.len() - 1) as f32)) as usize;
 
         scale[bucket]
     }
 
-    pub fn default(row: u16, col: u16) -> Self {
-        Self {
-            brightness: 1.0,
-            row,
-            col,
-            rune: b'@',
-        }
+    pub fn default_scale(brightness: f32) -> Self {
+        Cell::with_scale(brightness, &Cell::DEFAULT_BRIGHTNESS_SCALE)
     }
 
-    pub fn with_brightness(row: u16, col: u16, brightness: f32) -> Self {
-        let rune = Cell::select_from_brightness_scale(brightness, &Cell::BRIGHTNESS_SCALE);
+    pub fn with_scale(brightness: f32, scale: &[char]) -> Self {
         Self {
             brightness,
-            row,
-            col,
-            rune,
+            rune: Cell::select_from_brightness_scale(brightness, scale),
         }
     }
 }
@@ -113,7 +104,7 @@ impl FrameBuffer {
 
                     while curr_col < cols - 1 && curr_cell.ne(prev_cell) {
                         match curr_cell {
-                            Some(c) => self.stdout_handle.queue(style::Print(c.rune as char))?,
+                            Some(c) => self.stdout_handle.queue(style::Print(c.rune))?,
                             None => self.stdout_handle.queue(style::Print(' '))?,
                         };
 
@@ -146,6 +137,8 @@ pub fn render_frame_swap_buffers(
     let width = buffer.cols() as f32;
     let height = buffer.rows() as f32;
 
+    // let scale: Vec<char> = ".`-_':,;^~+=<>ilI!?1rctjuoezasxvnypwkbdfhqmgJCLUOZQG0DYXKVPAWSB#RHENM$&@".chars().collect();
+
     let aspect_ratio = (width / height) * CELL_WIDTH_TO_HEIGHT_RATIO;
 
     apply_camera_forces(
@@ -177,7 +170,7 @@ pub fn render_frame_swap_buffers(
             if let Some(hit) = scene.intersect(camera_position, normalized_ray_direction) {
                 let brightness = scene.lambertian_brightness(hit.get_surface_normal());
                 buffer.inner_buf[row as usize][col as usize] =
-                    Some(Cell::with_brightness(row, col, brightness));
+                    Some(Cell::default_scale(brightness));
             }
         }
     }
