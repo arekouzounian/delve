@@ -28,7 +28,8 @@ impl Cell {
 
     pub fn select_from_brightness_scale(brightness: f32, scale: &[u8]) -> u8 {
         let bucket = (brightness.clamp(0.0, 1.0) * ((scale.len() - 1) as f32)) as usize;
-        return scale[bucket];
+
+        scale[bucket]
     }
 
     pub fn default(row: u16, col: u16) -> Self {

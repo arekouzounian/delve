@@ -3,6 +3,7 @@ use std::ops::{Deref, DerefMut};
 use crate::math::Vec3;
 use crate::{max, min};
 
+#[allow(unused)]
 pub struct Collision {
     collision_position: Vec3,
     surface_normal: Vec3,

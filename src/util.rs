@@ -1,6 +1,23 @@
 #[macro_export]
+macro_rules! mat {
+    (
+        $(
+            [ $($elem:expr),+ $(,)? ]
+        ),+ $(,)?
+    ) => {
+        $crate::math::Matrix {
+            inner: [
+                $(
+                    [ $($elem),+ ],
+                )+
+            ]
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! max {
-    ($first: expr, $second: expr $(, $i: expr),*) => {
+    ($first:expr, $second:expr $(, $i:expr),*) => {
         {
             let mut curr_max = $first;
             if $second > curr_max {

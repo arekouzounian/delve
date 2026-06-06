@@ -47,8 +47,8 @@ pub fn listen_for_input(
         let new_event = new_event.unwrap();
         let is_key_down = new_event.is_key_press() || new_event.is_key_repeat();
 
-        match new_event {
-            event::Event::Key(key_event) => match key_event.code {
+        if let event::Event::Key(key_event) = new_event {
+            match key_event.code {
                 KeyCode::Esc => break Ok(()),
                 KeyCode::Up => next_movement = Some(Movement::PitchUp),
                 KeyCode::Down => next_movement = Some(Movement::PitchDown),
@@ -74,8 +74,7 @@ pub fn listen_for_input(
                 }
 
                 _ => (),
-            },
-            _ => (),
+            };
         }
 
         if let Some(m) = next_movement {

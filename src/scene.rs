@@ -133,7 +133,7 @@ impl Scene {
     }
 
     pub fn update_all(&mut self) {
-        for (_id, shape) in &mut self.objects {
+        for shape in self.objects.values_mut() {
             match shape {
                 Shape::Cube(c) => c.sin_hover(self.start),
                 _ => (),
@@ -146,7 +146,7 @@ impl Scene {
     pub fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
         let mut closest: Option<Collision> = None;
 
-        for (_id, shape) in &self.objects {
+        for shape in self.objects.values() {
             let result = match shape {
                 Shape::Sphere(s) => s.intersect(ray_origin, ray_direction),
                 Shape::RectPrism(r) => r.intersect(ray_origin, ray_direction),

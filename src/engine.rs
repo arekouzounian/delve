@@ -79,9 +79,10 @@ impl DelveEngine {
     }
 
     /// blocks until is_running is set to false.
-    pub fn run(&mut self) -> std::io::Result<()> {
-        let already_running = self.is_running.swap(true, Ordering::SeqCst);
-        assert!(!already_running);
+    /// panics if called more than once.
+    pub fn run(mut self) -> std::io::Result<()> {
+        assert!(!self.is_running.load(Ordering::SeqCst));
+        self.is_running.store(true, Ordering::SeqCst);
 
         #[cfg(profiling_enabled)]
         let mut samples: u64 = 0;
