@@ -5,7 +5,7 @@
 /// we can kinda get away with this by encoding the dimensions into the
 /// type parameters which is kinda nuts
 use std::fmt::Debug;
-use std::ops::{Add, AddAssign, Mul, Sub, SubAssign, Deref, DerefMut};
+use std::ops::{Add, AddAssign, Deref, DerefMut, Mul, Sub, SubAssign};
 
 use num_traits::NumAssign;
 use rand::prelude::*;
@@ -295,9 +295,21 @@ impl Mat3 {
         let n_z_squared = n.z * n.z;
 
         Mat3(mat![
-            [c + (n_x_squared * t), (n.x * n.y * t) - (n.z * s), (n.x * n.z * t) + (n.y * s)],
-            [(n.y * n.x * t) + (n.z * s), c + (n_y_squared * t), (n.y * n.z * t) - (n.x * s)],
-            [(n.z * n.x * t) - (n.y * s), (n.z * n.y * t) + (n.x * s), c + (n_z_squared * t)],
+            [
+                c + (n_x_squared * t),
+                (n.x * n.y * t) - (n.z * s),
+                (n.x * n.z * t) + (n.y * s)
+            ],
+            [
+                (n.y * n.x * t) + (n.z * s),
+                c + (n_y_squared * t),
+                (n.y * n.z * t) - (n.x * s)
+            ],
+            [
+                (n.z * n.x * t) - (n.y * s),
+                (n.z * n.y * t) + (n.x * s),
+                c + (n_z_squared * t)
+            ],
         ])
     }
 }
@@ -326,7 +338,6 @@ impl DerefMut for Mat3 {
     fn deref_mut(&mut self) -> &mut Matrix<f32, 3, 3> {
         &mut self.0
     }
-
 }
 
 // TODO: refactor using mat
@@ -343,6 +354,7 @@ impl Vec3 {
         y: 0.0,
         z: 0.0,
     };
+    pub const ZERO: Self = Self::ORIGIN;
 
     pub const X: Self = Self {
         x: 1.0,
@@ -393,8 +405,12 @@ impl Vec3 {
         Vec3::dot_product(self, other)
     }
 
+    pub fn square_magnitude(self) -> f32 {
+        (self.x * self.x) + (self.y * self.y) + (self.z * self.z)
+    }
+
     pub fn normalize(self) -> Self {
-        let magnitude = ((self.x * self.x) + (self.y * self.y) + (self.z * self.z)).sqrt();
+        let magnitude = self.square_magnitude().sqrt();
 
         Self {
             x: self.x / magnitude,
@@ -454,7 +470,8 @@ impl SubAssign for Vec3 {
 }
 
 impl<T> From<Matrix<T, 3, 1>> for Vec3
-where T: NumericType + Into<f32>
+where
+    T: NumericType + Into<f32>,
 {
     fn from(other: Matrix<T, 3, 1>) -> Self {
         Vec3::new(
@@ -465,8 +482,9 @@ where T: NumericType + Into<f32>
     }
 }
 
-impl<T> From<Matrix<T, 1, 3>> for Vec3 
-where T: NumericType + Into<f32>
+impl<T> From<Matrix<T, 1, 3>> for Vec3
+where
+    T: NumericType + Into<f32>,
 {
     fn from(other: Matrix<T, 1, 3>) -> Self {
         Vec3::new(
@@ -478,17 +496,13 @@ where T: NumericType + Into<f32>
 }
 
 impl<T> From<Vec3> for Matrix<T, 3, 1>
-where T: NumericType + From<f32>
+where
+    T: NumericType + From<f32>,
 {
     fn from(other: Vec3) -> Self {
-        mat![
-            [T::from(other.x)],
-            [T::from(other.y)],
-            [T::from(other.z)],
-        ]
+        mat![[T::from(other.x)], [T::from(other.y)], [T::from(other.z)],]
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -519,11 +533,7 @@ mod tests {
     #[test]
     fn test_transpose() {
         let m = mat![[1, 2, 3], [4, 5, 6]];
-        let expected = mat![
-            [1, 4],
-            [2, 5],
-            [3, 6]
-        ];
+        let expected = mat![[1, 4], [2, 5], [3, 6]];
 
         assert!(m.transpose() == expected);
     }

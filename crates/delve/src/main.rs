@@ -4,11 +4,11 @@ use std::thread;
 
 use delve::constants::*;
 use delve::engine::DelveEngine;
-use delve::input::listen_for_input;
-use delve::math::Vec3;
-use delve::scene::{Camera, Light, Scene};
 #[allow(unused)]
-use delve::shapes::{RectPrism, Cube, Shape, Sphere};
+use delve::entities::{Cube, RectPrism, Shape, Sphere};
+use delve::input::listen_for_input;
+use delve::scene::{Camera, Light, Scene};
+use delve_shared::math::Vec3;
 
 fn main() -> std::io::Result<()> {
     let running = Arc::new(AtomicBool::new(false));
@@ -26,17 +26,17 @@ fn main() -> std::io::Result<()> {
     );
     let mut scene = Scene::new(camera, AMBIENT_LIGHTING);
 
-    scene.register_light(Light::new(Vec3::new(0.0, 2.0, -1.0), 0.5));
+    // scene.register_light(Light::new(Vec3::new(0.0, 2.0, -1.0), 0.5));
 
-    // let sphere = Sphere::new(Vec3::new(2.0, 0.0, 2.0), 1.0);
-    // scene.register_shape(String::from("friendly_sphere"), Shape::Sphere(sphere));
+    let sphere = Sphere::new(Vec3::new(2.0, 0.0, 2.0), 1.0);
+    scene.register_shape(String::from("friendly_sphere"), Shape::Sphere(sphere));
 
     // let cube = Cube::new(1.0, Vec3::new(5.0, 0.0, 5.0));
     // scene.register_shape(String::from("evil_cube"), Shape::Cube(cube));
 
     // rotate about y axis
-    let rect = RectPrism::new(Vec3::new(0.5, 0.5, 4.0), Vec3::new(0.0, 0.0, 1.0));
-    scene.register_shape(String::from("long_prism"), Shape::RectPrism(rect));
+    // let rect = RectPrism::new(Vec3::new(0.5, 0.5, 4.0), Vec3::new(0.0, 0.0, 1.0));
+    // scene.register_shape(String::from("long_prism"), Shape::RectPrism(rect));
 
     let engine = DelveEngine::new(scene, movement_flags, running)?;
     engine.run()?;

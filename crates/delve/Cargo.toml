@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 crossterm = "0.29.0"
+delve-shared = { version = "0.1.0", path = "../delve-shared" }
 num-traits = "0.2.19"
 rand = "0.10.1"
 

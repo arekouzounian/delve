@@ -6,8 +6,8 @@ use std::sync::{
 };
 
 use crate::constants::*;
-use crate::math::Vec3;
 use crate::scene::Camera;
+use delve_shared::math::Vec3;
 
 #[repr(u32)]
 pub enum Movement {

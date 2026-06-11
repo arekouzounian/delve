@@ -168,7 +168,7 @@ pub fn render_frame_swap_buffers(
             .normalize();
 
             if let Some(hit) = scene.intersect(camera_position, normalized_ray_direction) {
-                let brightness = scene.lambertian_brightness(hit.get_surface_normal());
+                let brightness = scene.lambertian_brightness(&hit);
                 buffer.inner_buf[row as usize][col as usize] =
                     Some(Cell::default_scale(brightness));
             }

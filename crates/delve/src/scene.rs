@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::math::{Vec3, Mat3};
-use crate::shapes::{Collision, Shape};
+use crate::entities::{Collision, Entity, Shape};
+use delve_shared::math::{Mat3, Vec3};
 
 pub struct Camera {
     position: Vec3,
@@ -122,21 +122,39 @@ impl Scene {
         self.lights.push(light);
     }
 
-    pub fn lambertian_brightness(&self, surface_normal: Vec3) -> f32 {
+    pub fn lambertian_brightness(&self, hit: &Collision) -> f32 {
         let diffuse = self
             .lights
             .iter()
-            .map(|light| surface_normal.dot(light.direction).max(0.0) * light.intensity)
+            .map(|light| hit.surface_normal.dot(light.direction).max(0.0) * light.intensity)
             .sum::<f32>();
 
-        (self.ambient_lighting + diffuse).min(1.0)
+        // camera is also a light
+        // lets assume half angle is 30 degrees = pi/5
+        // refactor this later its gonna be inefficient
+        let half_angle = (std::f32::consts::PI / 5.0).cos();
+        let ray = hit.collision_position - self.camera.position;
+        let in_cone = ray.dot(self.camera.forward_normal()) <= half_angle;
+        let attenuation = (1.0 / (ray.square_magnitude())).min(1.0);
+        let camera_brightness = 0.5;
+
+        let mut result = self.ambient_lighting + diffuse;
+
+        if in_cone {
+            result += attenuation * camera_brightness;
+        }
+
+        result.min(1.0)
     }
 
     pub fn update_all(&mut self) {
         for shape in self.objects.values_mut() {
             match shape {
                 Shape::Cube(c) => c.sin_hover(self.start),
-                Shape::RectPrism(r) => r.set_rotation(Mat3::from_axis_angle(Vec3::Z, self.start.elapsed().as_secs_f32())),
+                Shape::RectPrism(r) => r.set_rotation(Mat3::from_axis_angle(
+                    Vec3::Z,
+                    self.start.elapsed().as_secs_f32(),
+                )),
                 _ => (),
             }
         }

@@ -1,20 +1,54 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::math::{Vec3, Mat3};
-use crate::{max, min};
+use delve_shared::{
+    math::{Mat3, Vec3},
+    max, min,
+};
+
+pub trait Entity {
+    /// Checks if there is a collision for this ray on this entity
+    fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision>;
+
+    /// Sets the gravity multiplier for the entity.
+    /// <0.0 => negative gravity
+    /// 0.0  => zero gravity
+    /// 1.0  => normal gravity
+    /// >1.0 => increased gravity
+    fn set_gravity(&mut self, multiplier: f32);
+
+    /// Sets the rotation matrix for the entity
+    fn set_rotation(&mut self, rotation_matrix: Mat3);
+
+    /// Set the position vector for the entity
+    fn set_position(&mut self, position: Vec3);
+
+    /// Set the velocity vector for the entity.
+    /// This will in turn be applied to the position vector
+    fn set_velocity(&mut self, velocity: Vec3);
+
+    /// Add to the acceleration vector for this entity.
+    /// This will in turn be applied to the velocity vector.
+    /// The decay factor decays this acceleration vector on each application;
+    /// close to 0.0 => decays very quickly
+    /// close to 1.0 => decays very slowly
+    fn add_acceleration(&mut self, acceleration: Vec3, decay: f32);
+
+    /// clears all acceleration vectors
+    fn clear_acceleration(&mut self);
+
+    /// applies decay to acceleration, acceleration to velocity,
+    /// then velocity to position.
+    fn apply_forces(&mut self);
+}
 
 #[allow(unused)]
 pub struct Collision {
-    collision_position: Vec3,
-    surface_normal: Vec3,
-    length_coefficient: f32,
+    pub collision_position: Vec3,
+    pub surface_normal: Vec3,
+    pub length_coefficient: f32,
 }
 
 impl Collision {
-    pub fn get_surface_normal(&self) -> Vec3 {
-        self.surface_normal
-    }
-
     pub fn closest(a: Self, b: Self) -> Self {
         if a.length_coefficient < b.length_coefficient {
             return a;
@@ -25,22 +59,33 @@ impl Collision {
 }
 
 pub struct Sphere {
+    acceleration: Vec<(Vec3, f32)>,
+    velocity: Vec3,
     position: Vec3,
     radius: f32,
+    gravity_multiplier: f32,
 }
 
 impl Sphere {
     pub fn new(position: Vec3, radius: f32) -> Self {
-        Self { position, radius }
+        Self {
+            acceleration: Vec::new(),
+            velocity: Vec3::ZERO,
+            position,
+            radius,
+            gravity_multiplier: 1.0,
+        }
     }
+}
 
+impl Entity for Sphere {
     /// The way this works is by solving for the points that the ray would
     /// collide with the sphere. In this case, we only return a collision
     /// if there are exactly two points that the ray collides with the sphere
     /// (entry and exit point), and those points are both positive (in front of the camera).
     /// the collision is at the closest point, the entry.
     /// ray_direction should be normalized
-    pub fn intersect(&self, ray_origin: Vec3, ray_direction_normal: Vec3) -> Option<Collision> {
+    fn intersect(&self, ray_origin: Vec3, ray_direction_normal: Vec3) -> Option<Collision> {
         let origin_center_diff = ray_origin - self.position;
 
         // formula: at^2 + bt + c
@@ -72,6 +117,50 @@ impl Sphere {
             surface_normal,
             length_coefficient,
         })
+    }
+
+    fn set_gravity(&mut self, multiplier: f32) {
+        self.gravity_multiplier = multiplier;
+    }
+
+    fn set_rotation(&mut self, _rotation_matrix: Mat3) {
+        () // does nothing for a sphere
+    }
+
+    fn set_position(&mut self, position: Vec3) {
+        self.position = position;
+    }
+
+    fn set_velocity(&mut self, velocity: Vec3) {
+        self.velocity = velocity;
+    }
+
+    fn add_acceleration(&mut self, acceleration: Vec3, decay: f32) {
+        self.acceleration.push((acceleration, decay));
+    }
+
+    fn clear_acceleration(&mut self) {
+        self.acceleration.clear();
+    }
+
+    fn apply_forces(&mut self) {
+        // TODO: this is expensive because we heap alloc each time. would this be better with a
+        // hash set?
+        let mut new_accel = Vec::with_capacity(self.acceleration.len());
+
+        for (accel, decay) in self.acceleration.iter_mut() {
+            *accel = accel.scalar_multiply(*decay);
+
+            self.velocity += *accel;
+            self.position += self.velocity;
+
+            // this is bad
+            if accel.square_magnitude() > 0.01 {
+                new_accel.push((accel.clone(), decay.clone()));
+            }
+        }
+
+        self.acceleration = new_accel;
     }
 }
 
@@ -116,7 +205,11 @@ pub struct RectPrism {
 
 impl RectPrism {
     pub fn new(dimensions: Vec3, center: Vec3) -> Self {
-        Self { rotation: Mat3::identity(), dimensions, center }
+        Self {
+            rotation: Mat3::identity(),
+            dimensions,
+            center,
+        }
     }
 
     pub fn set_rotation(&mut self, r: Mat3) {
