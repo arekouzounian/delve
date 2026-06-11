@@ -3,60 +3,9 @@ use std::ops::{Deref, DerefMut};
 use delve_shared::{
     math::{Mat3, Vec3},
     max, min,
+    traits::RayIntersect,
+    types::Collision,
 };
-
-pub trait Entity {
-    /// Checks if there is a collision for this ray on this entity
-    fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision>;
-
-    /// Sets the gravity multiplier for the entity.
-    /// <0.0 => negative gravity
-    /// 0.0  => zero gravity
-    /// 1.0  => normal gravity
-    /// >1.0 => increased gravity
-    fn set_gravity(&mut self, multiplier: f32);
-
-    /// Sets the rotation matrix for the entity
-    fn set_rotation(&mut self, rotation_matrix: Mat3);
-
-    /// Set the position vector for the entity
-    fn set_position(&mut self, position: Vec3);
-
-    /// Set the velocity vector for the entity.
-    /// This will in turn be applied to the position vector
-    fn set_velocity(&mut self, velocity: Vec3);
-
-    /// Add to the acceleration vector for this entity.
-    /// This will in turn be applied to the velocity vector.
-    /// The decay factor decays this acceleration vector on each application;
-    /// close to 0.0 => decays very quickly
-    /// close to 1.0 => decays very slowly
-    fn add_acceleration(&mut self, acceleration: Vec3, decay: f32);
-
-    /// clears all acceleration vectors
-    fn clear_acceleration(&mut self);
-
-    /// applies decay to acceleration, acceleration to velocity,
-    /// then velocity to position.
-    fn apply_forces(&mut self);
-}
-
-#[allow(unused)]
-pub struct Collision {
-    pub collision_position: Vec3,
-    pub surface_normal: Vec3,
-    pub length_coefficient: f32,
-}
-
-impl Collision {
-    pub fn closest(a: Self, b: Self) -> Self {
-        if a.length_coefficient < b.length_coefficient {
-            return a;
-        }
-
-        b
-    }
-}
 
 pub struct Sphere {
     acceleration: Vec<(Vec3, f32)>,
@@ -78,7 +27,7 @@ impl Sphere {
     }
 }
 
-impl Entity for Sphere {
+impl RayIntersect for Sphere {
     /// The way this works is by solving for the points that the ray would
     /// collide with the sphere. In this case, we only return a collision
     /// if there are exactly two points that the ray collides with the sphere
@@ -117,50 +66,6 @@ impl Entity for Sphere {
             surface_normal,
             length_coefficient,
         })
-    }
-
-    fn set_gravity(&mut self, multiplier: f32) {
-        self.gravity_multiplier = multiplier;
-    }
-
-    fn set_rotation(&mut self, _rotation_matrix: Mat3) {
-        () // does nothing for a sphere
-    }
-
-    fn set_position(&mut self, position: Vec3) {
-        self.position = position;
-    }
-
-    fn set_velocity(&mut self, velocity: Vec3) {
-        self.velocity = velocity;
-    }
-
-    fn add_acceleration(&mut self, acceleration: Vec3, decay: f32) {
-        self.acceleration.push((acceleration, decay));
-    }
-
-    fn clear_acceleration(&mut self) {
-        self.acceleration.clear();
-    }
-
-    fn apply_forces(&mut self) {
-        // TODO: this is expensive because we heap alloc each time. would this be better with a
-        // hash set?
-        let mut new_accel = Vec::with_capacity(self.acceleration.len());
-
-        for (accel, decay) in self.acceleration.iter_mut() {
-            *accel = accel.scalar_multiply(*decay);
-
-            self.velocity += *accel;
-            self.position += self.velocity;
-
-            // this is bad
-            if accel.square_magnitude() > 0.01 {
-                new_accel.push((accel.clone(), decay.clone()));
-            }
-        }
-
-        self.acceleration = new_accel;
     }
 }
 

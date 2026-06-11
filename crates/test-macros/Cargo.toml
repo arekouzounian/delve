@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 delve-macros = { version = "0.1.0", path = "../delve-macros" }
+delve-shared = { version = "0.1.0", path = "../delve-shared" }

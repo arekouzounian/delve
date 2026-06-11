@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::entities::{Collision, Entity, Shape};
+use crate::entities::Shape;
 use delve_shared::math::{Mat3, Vec3};
+use delve_shared::traits::RayIntersect;
+use delve_shared::types::Collision;
 
 pub struct Camera {
     position: Vec3,
