@@ -1,10 +1,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::entities::Shape;
-use delve_shared::math::{Mat3, Vec3};
-use delve_shared::traits::RayIntersect;
-use delve_shared::types::Collision;
+use delve_shared::{math::Vec3, traits::IntersectableEntity, types::Collision};
 
 pub struct Camera {
     position: Vec3,
@@ -97,7 +94,7 @@ impl Light {
 
 pub struct Scene {
     camera: Camera,
-    objects: HashMap<String, Shape>,
+    objects: HashMap<String, Box<dyn IntersectableEntity>>,
     lights: Vec<Light>,
     ambient_lighting: f32,
     start: Instant,
@@ -116,8 +113,8 @@ impl Scene {
     }
 
     // TODO: object de-registration/ID tracking
-    pub fn register_shape(&mut self, key: String, shape: Shape) {
-        self.objects.insert(key, shape);
+    pub fn register_shape(&mut self, key: String, entity: Box<dyn IntersectableEntity>) {
+        self.objects.insert(key, entity);
     }
 
     pub fn register_light(&mut self, light: Light) {
@@ -134,32 +131,35 @@ impl Scene {
         // camera is also a light
         // lets assume half angle is 30 degrees = pi/5
         // refactor this later its gonna be inefficient
-        let half_angle = (std::f32::consts::PI / 5.0).cos();
-        let ray = hit.collision_position - self.camera.position;
-        let in_cone = ray.dot(self.camera.forward_normal()) <= half_angle;
-        let attenuation = (1.0 / (ray.square_magnitude())).min(1.0);
-        let camera_brightness = 0.5;
+        // let half_angle = (std::f32::consts::PI / 5.0).cos();
+        // let ray = hit.collision_position - self.camera.position;
+        // let in_cone = ray.dot(self.camera.forward_normal()) <= half_angle;
+        // let attenuation = (1.0 / (ray.square_magnitude())).min(1.0);
+        // let camera_brightness = 0.5;
 
         let mut result = self.ambient_lighting + diffuse;
 
-        if in_cone {
-            result += attenuation * camera_brightness;
-        }
+        // if in_cone {
+        //     result += attenuation * camera_brightness;
+        // }
 
         result.min(1.0)
     }
 
     pub fn update_all(&mut self) {
-        for shape in self.objects.values_mut() {
-            match shape {
-                Shape::Cube(c) => c.sin_hover(self.start),
-                Shape::RectPrism(r) => r.set_rotation(Mat3::from_axis_angle(
-                    Vec3::Z,
-                    self.start.elapsed().as_secs_f32(),
-                )),
-                _ => (),
-            }
-        }
+        // TODO: maybe we can have an api where you set an update closure on the entity
+        // and this just calls it
+
+        // for shape in self.objects.values_mut() {
+        //     match shape {
+        //         Shape::Cube(c) => c.sin_hover(self.start),
+        //         Shape::RectPrism(r) => r.set_rotation(Mat3::from_axis_angle(
+        //             Vec3::Z,
+        //             self.start.elapsed().as_secs_f32(),
+        //         )),
+        //         _ => (),
+        //     }
+        // }
     }
 
     // TODO: naively checks all shapes; should optimize this
@@ -168,13 +168,7 @@ impl Scene {
         let mut closest: Option<Collision> = None;
 
         for shape in self.objects.values() {
-            let result = match shape {
-                Shape::Sphere(s) => s.intersect(ray_origin, ray_direction),
-                Shape::RectPrism(r) => r.intersect(ray_origin, ray_direction),
-                Shape::Cube(c) => c.intersect(ray_origin, ray_direction),
-            };
-
-            if let Some(collision) = result {
+            if let Some(collision) = shape.intersect(ray_origin, ray_direction) {
                 match closest.take() {
                     None => closest = Some(collision),
                     Some(c) => closest = Some(Collision::closest(collision, c)),

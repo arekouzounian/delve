@@ -1,6 +1,9 @@
 use crate::math::{Mat3, Vec3};
 use crate::types::Collision;
 
+pub trait IntersectableEntity: Entity + RayIntersect {}
+impl<T: Entity + RayIntersect> IntersectableEntity for T {}
+
 pub trait Entity {
     /// Sets the gravity multiplier for the entity.
     /// <0.0 => negative gravity

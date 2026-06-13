@@ -113,6 +113,17 @@ impl<'a, T, const R: usize, const C: usize> Iterator for ColIterator<'a, T, R, C
     }
 }
 
+impl<T, const R: usize, const C: usize> Default for Matrix<T, R, C>
+where
+    T: Default + Copy,
+{
+    fn default() -> Self {
+        Self {
+            inner: [[T::default(); C]; R],
+        }
+    }
+}
+
 impl<T, const R: usize, const C: usize> Matrix<T, R, C>
 where
     T: NumericType,
@@ -259,6 +270,7 @@ where
     }
 }
 
+#[derive(Debug, Default)]
 pub struct Mat3(Matrix<f32, 3, 3>);
 
 impl Mat3 {
@@ -341,7 +353,7 @@ impl DerefMut for Mat3 {
 }
 
 // TODO: refactor using mat
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Vec3 {
     pub x: f32,
     pub y: f32,

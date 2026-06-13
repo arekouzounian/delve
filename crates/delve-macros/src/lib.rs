@@ -1,34 +1,21 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{Field, Fields, ItemStruct, parse_macro_input};
+use syn::{Field, Fields, Ident, ItemStruct, parse_macro_input};
 
+/// Implements the entity trait and adds fields.
+/// Only works on named structs, tuple/unit structs don't work.
+/// Provides an implementation for default()
 #[proc_macro_attribute]
 pub fn entity(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut input_struct = parse_macro_input!(item as ItemStruct);
 
-    let rotation_matrix_field: Field = syn::parse_quote! {
-        _entity_rotation: delve_shared::math::Mat3
-    };
-    let acceleration_field: Field = syn::parse_quote! {
-        _entity_acceleration: Vec<(delve_shared::math::Vec3, f32)>
-    };
-    let velocity_field: Field = syn::parse_quote! {
-        _entity_velocity: delve_shared::math::Vec3
-    };
-    let position_field: Field = syn::parse_quote! {
-        _entity_position: delve_shared::math::Vec3
-    };
-    let gravity_mult_field: Field = syn::parse_quote! {
-        _entity_gravity_multiplier: f32
+    let entity_field: Field = syn::parse_quote! {
+        _entity_fields: delve_shared::types::EntityFields
     };
 
     match &mut input_struct.fields {
         Fields::Named(fields) => {
-            fields.named.push(rotation_matrix_field);
-            fields.named.push(acceleration_field);
-            fields.named.push(velocity_field);
-            fields.named.push(position_field);
-            fields.named.push(gravity_mult_field);
+            fields.named.push(entity_field);
         }
         Fields::Unnamed(_) | Fields::Unit => {
             let err = syn::Error::new_spanned(
@@ -44,50 +31,59 @@ pub fn entity(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let ident = &input_struct.ident;
     let fields = &input_struct.fields;
 
-    quote! {
-        use delve_shared;
+    // can we avoid the clone?
+    let field_names = fields
+        .iter()
+        .map(|f| f.ident.clone().unwrap())
+        .collect::<Vec<Ident>>();
 
+    quote! {
+        #[derive(Debug)]
         #vis struct #ident #fields
 
-        impl delve_shared::traits::Entity for #ident {
-            // fn new() -> Self {
-            //     Self
-            // }
+        impl Default for #ident {
+            fn default() -> Self {
+                Self {
+                    #(#field_names: Default::default()),*
+                }
+            }
+        }
 
+        impl delve_shared::traits::Entity for #ident {
             fn set_gravity(&mut self, multiplier: f32) {
-                self._entity_gravity_multiplier = multiplier;
+                self._entity_fields.gravity_multiplier = multiplier;
             }
 
             fn set_rotation(&mut self, rotation_matrix: delve_shared::math::Mat3) {
-                self._entity_rotation = rotation_matrix;
+                self._entity_fields.rotation = rotation_matrix;
             }
 
             fn set_position(&mut self, position: delve_shared::math::Vec3) {
-                self._entity_position = position;
+                self._entity_fields.position = position;
             }
 
             fn set_velocity(&mut self, velocity: delve_shared::math::Vec3) {
-                self._entity_velocity = velocity;
+                self._entity_fields.velocity = velocity;
             }
 
             fn add_acceleration(&mut self, acceleration: delve_shared::math::Vec3, decay: f32) {
-                self._entity_acceleration.push((acceleration, decay));
+                self._entity_fields.acceleration.push((acceleration, decay));
             }
 
             fn clear_acceleration(&mut self) {
-                self._entity_acceleration.clear();
+                self._entity_fields.acceleration.clear();
             }
 
             fn apply_forces(&mut self) {
                 // TODO: this is expensive because we heap alloc each time. would this be better with a
                 // hash set?
-                let mut new_accel = Vec::with_capacity(self._entity_acceleration.len());
+                let mut new_accel = Vec::with_capacity(self._entity_fields.acceleration.len());
 
-                for (accel, decay) in self._entity_acceleration.iter_mut() {
+                for (accel, decay) in self._entity_fields.acceleration.iter_mut() {
                     *accel = accel.scalar_multiply(*decay);
 
-                    self._entity_velocity += *accel;
-                    self._entity_position += self._entity_velocity;
+                    self._entity_fields.velocity += *accel;
+                    self._entity_fields.position += self._entity_fields.velocity;
 
                     // this is bad
                     if accel.square_magnitude() > 0.01 {
@@ -95,7 +91,7 @@ pub fn entity(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     }
                 }
 
-                self._entity_acceleration = new_accel;
+                self._entity_fields.acceleration = new_accel;
             }
         }
     }

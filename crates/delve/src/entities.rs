@@ -3,26 +3,22 @@ use std::ops::{Deref, DerefMut};
 use delve_shared::{
     math::{Mat3, Vec3},
     max, min,
-    traits::RayIntersect,
+    traits::{Entity, RayIntersect},
     types::Collision,
 };
 
+use delve_macros::entity;
+
+#[entity]
 pub struct Sphere {
-    acceleration: Vec<(Vec3, f32)>,
-    velocity: Vec3,
-    position: Vec3,
     radius: f32,
-    gravity_multiplier: f32,
 }
 
 impl Sphere {
-    pub fn new(position: Vec3, radius: f32) -> Self {
+    pub fn new(radius: f32) -> Self {
         Self {
-            acceleration: Vec::new(),
-            velocity: Vec3::ZERO,
-            position,
             radius,
-            gravity_multiplier: 1.0,
+            ..Self::default()
         }
     }
 }
@@ -35,7 +31,7 @@ impl RayIntersect for Sphere {
     /// the collision is at the closest point, the entry.
     /// ray_direction should be normalized
     fn intersect(&self, ray_origin: Vec3, ray_direction_normal: Vec3) -> Option<Collision> {
-        let origin_center_diff = ray_origin - self.position;
+        let origin_center_diff = ray_origin - self._entity_fields.position;
 
         // formula: at^2 + bt + c
         // technically a is not needed because it's normalized, and always 1
@@ -59,7 +55,7 @@ impl RayIntersect for Sphere {
         let length_coefficient = min!(length_coefficient_one, length_coefficient_two);
         let collision_position =
             ray_origin + ray_direction_normal.scalar_multiply(length_coefficient);
-        let surface_normal = (collision_position - self.position).normalize();
+        let surface_normal = (collision_position - self._entity_fields.position).normalize();
 
         Some(Collision {
             collision_position,
@@ -72,14 +68,14 @@ impl RayIntersect for Sphere {
 pub struct Cube(RectPrism);
 
 impl Cube {
-    pub fn new(height: f32, center: Vec3) -> Self {
-        Self(RectPrism::new(Vec3::new(height, height, height), center))
+    pub fn new(height: f32) -> Self {
+        Self(RectPrism::new(Vec3::new(height, height, height)))
     }
 
     pub fn sin_hover(&mut self, start: std::time::Instant) {
         let theta = start.elapsed().as_secs_f32();
 
-        self.0.center.y = 0.3 * ((theta * 2.0).sin());
+        self.0._entity_fields.position.y = 0.3 * ((theta * 2.0).sin());
 
         self.set_rotation(Mat3::from_axis_angle(Vec3::Y, theta));
     }
@@ -99,26 +95,18 @@ impl DerefMut for Cube {
     }
 }
 
+#[entity]
 pub struct RectPrism {
-    /// NOT column-vector form; storing the transpose
-    /// [[right], [up], [forward]]
-    rotation: Mat3,
     /// width, height, length
     dimensions: Vec3,
-    center: Vec3,
 }
 
 impl RectPrism {
-    pub fn new(dimensions: Vec3, center: Vec3) -> Self {
+    pub fn new(dimensions: Vec3) -> Self {
         Self {
-            rotation: Mat3::identity(),
             dimensions,
-            center,
+            ..Self::default()
         }
-    }
-
-    pub fn set_rotation(&mut self, r: Mat3) {
-        self.rotation = r;
     }
 
     /// slab method; axis-aligned cube
@@ -126,10 +114,10 @@ impl RectPrism {
     /// is equal to center +- height/2
     /// cube = 3 sets of parallel, axis-aligned planes
     pub fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
-        let rotation_transpose: Mat3 = self.rotation.transpose().into();
+        let rotation_transpose: Mat3 = self._entity_fields.rotation.transpose().into();
 
         // transform into local coordinate space
-        let ray_origin = rotation_transpose.apply(ray_origin - self.center);
+        let ray_origin = rotation_transpose.apply(ray_origin - self._entity_fields.position);
         let ray_direction = rotation_transpose.apply(ray_direction);
 
         let hx = self.dimensions.x / 2.0;
@@ -167,8 +155,8 @@ impl RectPrism {
 
             // we are still in local AABB coordinate space so now we need to rotate out
             // inverse == transpose
-            position = self.rotation.apply(position) + self.center;
-            normal = self.rotation.apply(normal);
+            position = self._entity_fields.rotation.apply(position) + self._entity_fields.position;
+            normal = self._entity_fields.rotation.apply(normal);
 
             return Some(Collision {
                 collision_position: position,

@@ -87,9 +87,18 @@ name = "delve"
 version = "0.1.0"
 dependencies = [
  "crossterm",
+ "delve-macros",
  "delve-shared",
  "num-traits",
  "rand",
+]
+
+[[package]]
+name = "delve-macros"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn",
 ]
 
 [[package]]

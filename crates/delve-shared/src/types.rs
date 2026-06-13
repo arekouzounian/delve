@@ -16,3 +16,13 @@ impl Collision {
         b
     }
 }
+
+// All the fields needed for an Entity implementation.
+#[derive(Default, Debug)]
+pub struct EntityFields {
+    pub rotation: crate::math::Mat3,
+    pub acceleration: Vec<(crate::math::Vec3, f32)>,
+    pub velocity: Vec3,
+    pub position: Vec3,
+    pub gravity_multiplier: f32,
+}

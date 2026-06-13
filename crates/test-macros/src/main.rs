@@ -5,4 +5,8 @@ pub struct Item {
     item: u64,
 }
 
-fn main() {}
+fn main() {
+    let i = Item::default();
+
+    println!("{:?}", i);
+}

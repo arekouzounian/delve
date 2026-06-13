@@ -8,7 +8,7 @@ use delve::engine::DelveEngine;
 use delve::entities::{Cube, RectPrism, Shape, Sphere};
 use delve::input::listen_for_input;
 use delve::scene::{Camera, Light, Scene};
-use delve_shared::math::Vec3;
+use delve_shared::{math::Vec3, traits::Entity};
 
 fn main() -> std::io::Result<()> {
     let running = Arc::new(AtomicBool::new(false));
@@ -26,10 +26,12 @@ fn main() -> std::io::Result<()> {
     );
     let mut scene = Scene::new(camera, AMBIENT_LIGHTING);
 
-    // scene.register_light(Light::new(Vec3::new(0.0, 2.0, -1.0), 0.5));
+    scene.register_light(Light::new(Vec3::new(0.0, 2.0, -1.0), 0.5));
 
-    let sphere = Sphere::new(Vec3::new(2.0, 0.0, 2.0), 1.0);
-    scene.register_shape(String::from("friendly_sphere"), Shape::Sphere(sphere));
+    let mut sphere = Sphere::new(1.0);
+    sphere.set_position(Vec3::new(2.0, 0.0, 2.0));
+
+    scene.register_shape(String::from("friendly_sphere"), Box::new(sphere));
 
     // let cube = Cube::new(1.0, Vec3::new(5.0, 0.0, 5.0));
     // scene.register_shape(String::from("evil_cube"), Shape::Cube(cube));
