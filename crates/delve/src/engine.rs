@@ -10,10 +10,10 @@ use std::time::Instant;
 use crossterm::{QueueableCommand, cursor, event, terminal};
 
 use crate::{
-    constants::*,
     render::{FrameBuffer, render_frame_swap_buffers},
     scene::Scene,
 };
+use delve_shared::constants::*;
 
 pub struct DelveEngine {
     // TODO: how to deal with resizing?

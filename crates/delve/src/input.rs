@@ -5,9 +5,8 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU32},
 };
 
-use crate::constants::*;
 use crate::scene::Camera;
-use delve_shared::math::Vec3;
+use delve_shared::{constants::*, math::Vec3, traits::Entity};
 
 #[repr(u32)]
 pub enum Movement {
@@ -127,10 +126,11 @@ pub fn apply_camera_forces(camera: &mut Camera, movement_flags: u32) {
         camera.apply_yaw(ROTATION_PER_FRAME_RADIANS);
     }
 
-    camera.velocity =
-        camera.velocity.scalar_multiply(DECAY_SCALE) + camera_force.scalar_multiply(INPUT_SCALE);
+    *camera.acceleration_mut() = camera_force.scalar_multiply(INPUT_SCALE);
+    camera.update_target_and_forces();
 
-    if camera.velocity.dot(camera.velocity) > VELOCITY_THRESHOLD {
-        camera.apply_force(camera.velocity);
+    // maybe we can make this more sophisticated
+    if camera.position().x < 0.0 {
+        (*camera.position_mut()).x = 0.0;
     }
 }

@@ -7,9 +7,9 @@ use std::sync::{
 
 use crossterm::{ExecutableCommand, QueueableCommand, cursor, style, terminal};
 
-use crate::constants::CELL_WIDTH_TO_HEIGHT_RATIO;
 use crate::input::apply_camera_forces;
 use crate::scene::Scene;
+use delve_shared::constants::*;
 
 pub trait BufType: Write + ExecutableCommand + QueueableCommand {}
 impl<T: Write + ExecutableCommand + QueueableCommand> BufType for T {}

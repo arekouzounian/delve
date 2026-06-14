@@ -21,8 +21,7 @@ impl Collision {
 #[derive(Default, Debug)]
 pub struct EntityFields {
     pub rotation: crate::math::Mat3,
-    pub acceleration: Vec<(crate::math::Vec3, f32)>,
+    pub acceleration: Vec3,
     pub velocity: Vec3,
     pub position: Vec3,
-    pub gravity_multiplier: f32,
 }

@@ -270,8 +270,14 @@ where
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Mat3(Matrix<f32, 3, 3>);
+
+impl Default for Mat3 {
+    fn default() -> Self {
+        Self::identity()
+    }
+}
 
 impl Mat3 {
     pub fn zero() -> Self {
@@ -360,6 +366,15 @@ pub struct Vec3 {
     pub z: f32,
 }
 
+impl Eq for Vec3 {}
+impl std::hash::Hash for Vec3 {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.x.to_bits().hash(state);
+        self.y.to_bits().hash(state);
+        self.z.to_bits().hash(state);
+    }
+}
+
 impl Vec3 {
     pub const ORIGIN: Self = Self {
         x: 0.0,
@@ -422,6 +437,10 @@ impl Vec3 {
     }
 
     pub fn normalize(self) -> Self {
+        if self == Vec3::ZERO {
+            return Vec3::ZERO;
+        }
+
         let magnitude = self.square_magnitude().sqrt();
 
         Self {

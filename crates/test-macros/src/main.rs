@@ -1,5 +1,6 @@
 use delve_macros::entity;
 
+#[derive(Debug)]
 #[entity]
 pub struct Item {
     item: u64,

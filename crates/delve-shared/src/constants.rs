@@ -13,6 +13,8 @@ pub const DECAY_SCALE: f32 = 0.9;
 // < 1 -> decrease force
 pub const INPUT_SCALE: f32 = 0.01;
 
+pub const VELOCITY_DAMP: f32 = 0.9;
+
 pub const VELOCITY_THRESHOLD: f32 = 0.0001;
 
 pub const ROTATION_PER_FRAME_RADIANS: f32 = 0.05;

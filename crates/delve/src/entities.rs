@@ -31,7 +31,7 @@ impl RayIntersect for Sphere {
     /// the collision is at the closest point, the entry.
     /// ray_direction should be normalized
     fn intersect(&self, ray_origin: Vec3, ray_direction_normal: Vec3) -> Option<Collision> {
-        let origin_center_diff = ray_origin - self._entity_fields.position;
+        let origin_center_diff = ray_origin - self.entity_fields.position;
 
         // formula: at^2 + bt + c
         // technically a is not needed because it's normalized, and always 1
@@ -55,7 +55,7 @@ impl RayIntersect for Sphere {
         let length_coefficient = min!(length_coefficient_one, length_coefficient_two);
         let collision_position =
             ray_origin + ray_direction_normal.scalar_multiply(length_coefficient);
-        let surface_normal = (collision_position - self._entity_fields.position).normalize();
+        let surface_normal = (collision_position - self.entity_fields.position).normalize();
 
         Some(Collision {
             collision_position,
@@ -75,9 +75,9 @@ impl Cube {
     pub fn sin_hover(&mut self, start: std::time::Instant) {
         let theta = start.elapsed().as_secs_f32();
 
-        self.0._entity_fields.position.y = 0.3 * ((theta * 2.0).sin());
+        self.0.entity_fields.position.y = 0.3 * ((theta * 2.0).sin());
 
-        self.set_rotation(Mat3::from_axis_angle(Vec3::Y, theta));
+        *self.rotation_mut() = Mat3::from_axis_angle(Vec3::Y, theta);
     }
 }
 
@@ -114,10 +114,10 @@ impl RectPrism {
     /// is equal to center +- height/2
     /// cube = 3 sets of parallel, axis-aligned planes
     pub fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
-        let rotation_transpose: Mat3 = self._entity_fields.rotation.transpose().into();
+        let rotation_transpose: Mat3 = self.entity_fields.rotation.transpose().into();
 
         // transform into local coordinate space
-        let ray_origin = rotation_transpose.apply(ray_origin - self._entity_fields.position);
+        let ray_origin = rotation_transpose.apply(ray_origin - self.entity_fields.position);
         let ray_direction = rotation_transpose.apply(ray_direction);
 
         let hx = self.dimensions.x / 2.0;
@@ -155,8 +155,8 @@ impl RectPrism {
 
             // we are still in local AABB coordinate space so now we need to rotate out
             // inverse == transpose
-            position = self._entity_fields.rotation.apply(position) + self._entity_fields.position;
-            normal = self._entity_fields.rotation.apply(normal);
+            position = self.entity_fields.rotation.apply(position) + self.entity_fields.position;
+            normal = self.entity_fields.rotation.apply(normal);
 
             return Some(Collision {
                 collision_position: position,
@@ -166,6 +166,69 @@ impl RectPrism {
         }
 
         None
+    }
+}
+
+/// in theory should be infinite, but we would need some sort of dropoff calculation to avoid
+/// infinitely checking ray collisions
+#[entity]
+pub struct Plane {
+    /// width, height, length
+    dimensions: Vec3,
+    /// world normal, not local
+    normal: Vec3,
+}
+
+impl Plane {
+    pub fn new(dimensions: Vec3, normal: Vec3) -> Self {
+        Self {
+            dimensions,
+            normal,
+            ..Self::default()
+        }
+    }
+}
+
+impl RayIntersect for Plane {
+    fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
+        let rotation_transpose: Mat3 = self.entity_fields.rotation.transpose().into();
+
+        // transform into local coordinate space
+        let ray_origin = rotation_transpose.apply(ray_origin - self.entity_fields.position);
+        let ray_direction = rotation_transpose.apply(ray_direction);
+        let normal = rotation_transpose.apply(self.normal);
+
+        // P(t) = ray_origin + (t * ray_direction); this yields a point on the ray
+        // Q = plane center, N = plane normal
+        // the plane is defined as some point Q and some normal N
+        // for any point P, if (P - Q) * N = 0, that means the vector from Q to P is on the plane,
+        // which means P is on the plane.
+        let denom = normal.dot(ray_direction);
+        let numer = -normal.dot(ray_origin); // since we're in local space, plane is at the origin
+
+        if denom.abs() < 1e-6 {
+            return None;
+        }
+
+        let t = numer / denom; // is div by zero possible?
+        if t < 0.0 {
+            return None;
+        }
+
+        let collision = ray_origin + ray_direction.scalar_multiply(t);
+
+        if collision.x.abs() >= self.dimensions.x / 2.0
+            || collision.y.abs() >= self.dimensions.y / 2.0
+            || collision.z.abs() >= self.dimensions.z / 2.0
+        {
+            return None;
+        }
+
+        Some(Collision {
+            surface_normal: self.normal,
+            collision_position: self.entity_fields.rotation.apply(collision) + *self.position(),
+            length_coefficient: t,
+        })
     }
 }
 

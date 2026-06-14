@@ -1,29 +1,32 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use delve_shared::{math::Vec3, traits::IntersectableEntity, types::Collision};
+use delve_macros::entity;
+use delve_shared::{
+    math::Vec3,
+    traits::{Entity, IntersectableEntity},
+    types::Collision,
+};
 
+#[entity]
 pub struct Camera {
-    position: Vec3,
     target: Vec3,
-    pub velocity: Vec3,
     fov_radians: f32,
 }
 
 impl Camera {
     pub const WORLD_UP: Vec3 = Vec3::new(0.0, 1.0, 0.0);
 
-    pub fn new(position: Vec3, target: Vec3, fov_radians: f32) -> Self {
+    pub fn new(target: Vec3, fov_radians: f32) -> Self {
         Self {
-            position,
             target,
-            velocity: Vec3::ORIGIN,
             fov_radians,
+            ..Self::default()
         }
     }
 
     pub fn get_position(&self) -> Vec3 {
-        self.position
+        self.entity_fields.position
     }
 
     pub fn fov_factor(&self) -> f32 {
@@ -31,7 +34,7 @@ impl Camera {
     }
 
     pub fn forward_normal(&self) -> Vec3 {
-        (self.target - self.position).normalize()
+        (self.target - self.entity_fields.position).normalize()
     }
 
     pub fn right_normal(&self) -> Vec3 {
@@ -42,25 +45,25 @@ impl Camera {
         Vec3::cross_product(&self.forward_normal(), &self.right_normal())
     }
 
-    pub fn apply_force(&mut self, force_vec: Vec3) {
-        self.position += force_vec;
-        self.target += force_vec;
+    pub fn update_target_and_forces(&mut self) {
+        self.apply_forces();
+        self.target += self.entity_fields.velocity;
     }
 
     pub fn apply_yaw(&mut self, angle_rads: f32) {
-        let forward = self.target - self.position;
+        let forward = self.target - self.entity_fields.position;
         let yawed = Vec3::new(
             forward.x * angle_rads.cos() - forward.z * angle_rads.sin(),
             forward.y,
             forward.x * angle_rads.sin() + forward.z * angle_rads.cos(),
         );
 
-        self.target = self.position + yawed;
+        self.target = self.entity_fields.position + yawed;
     }
 
     // positive angle goes up, negative goes down
     pub fn apply_pitch(&mut self, angle_rads: f32) {
-        let forward = self.target - self.position;
+        let forward = self.target - self.entity_fields.position;
         let right = self.right_normal();
         // rodrigues' rotation formula, i guess
         // rodrigues was onto something
@@ -74,7 +77,7 @@ impl Camera {
             return; // clamp
         }
 
-        self.target = self.position + pitched;
+        self.target = self.entity_fields.position + pitched;
     }
 }
 
