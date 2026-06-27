@@ -16,11 +16,14 @@ I guess if we're paring down the physics system to just the player then we don't
 just clip into each other. Gravity should be simple to calculate/abide by for all objects (as long as we define a ground), but we can just skip
 the implementation for other object collisions and just focus on the player model.
 
+honestly if we use rayon carefully in our render loop then we might not need gpu accel.
+really the only computationally expensive thing is calculating rays and drawing them to the screen.
+if we pare down collisions to just collisions on the camera then we can get really solid performance
+
 the interface should be such that we can register objects at runtime (because we're building towards procedural generation). That's pretty much
 what it already is but i just wanna keep that in mind. so here's what we have:
 - A __current__ room; this can of course change
 - Each room is filled with objects, each of which has a position, a rotation, and optionally velocity and acceleration.
-- Each object can opt-out of gravity
 - We also have a camera, which is just like any other object except for the following characteristics:
   - all raycasts come from the camera's perspective
   - input directly manages the object's velocity
@@ -30,3 +33,4 @@ what it already is but i just wanna keep that in mind. so here's what we have:
 - objects should also have a way to opt in & out of dynamic lighting. that is, later on when i simulate textures atop a surface, I should
 be able to just keep the brightness as a constant for that surface/object/etc.
 - lighting should be able to have variable reflectiveness; i.e. ground should not always be fully bright
+  - i think that means storing some absorption on each collision object

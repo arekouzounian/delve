@@ -7,7 +7,7 @@ CRATES_DIR="./crates"
 for crate in $(ls $CRATES_DIR); do
   echo "building $crate..."
   pushd "$CRATES_DIR/$crate"
-  cargo build
+  cargo build --release
   popd
 done
 

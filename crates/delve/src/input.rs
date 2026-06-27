@@ -5,8 +5,8 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU32},
 };
 
-use crate::scene::Camera;
-use delve_shared::{constants::*, math::Vec3, traits::Entity};
+use crate::scene::CameraNormals;
+use delve_shared::{constants::*, math::Vec3};
 
 #[repr(u32)]
 pub enum Movement {
@@ -20,6 +20,12 @@ pub enum Movement {
     PitchDown = 1 << 7,
     YawLeft = 1 << 8,
     YawRight = 1 << 9,
+}
+
+pub struct CameraForce {
+    pub forces: Vec3,
+    pub pitch_radians: f32,
+    pub yaw_radians: f32,
 }
 
 /*
@@ -89,48 +95,49 @@ pub fn listen_for_input(
     last_result
 }
 
-pub fn apply_camera_forces(camera: &mut Camera, movement_flags: u32) {
+pub fn construct_camera_forces(normals: CameraNormals, movement_flags: u32) -> CameraForce {
     let mut camera_force = Vec3::ORIGIN;
-    let forward_normal = camera.forward_normal();
-    let right_normal = camera.right_normal();
-    let up_normal = camera.up_normal();
+    let mut pitch = 0.0;
+    let mut yaw = 0.0;
+
+    // get rid of the y component to lock us into the xz plane
+    let flat_forward = Vec3::new(normals.forward.x, 0.0, normals.forward.z).normalize();
+    let flat_right = Vec3::new(normals.right.x, 0.0, normals.right.z).normalize();
 
     if (movement_flags & (Movement::Forward as u32)) == Movement::Forward as u32 {
-        camera_force += forward_normal;
+        camera_force += flat_forward;
     }
     if (movement_flags & (Movement::Backward as u32)) == Movement::Backward as u32 {
-        camera_force -= forward_normal;
+        camera_force -= flat_forward;
     }
     if (movement_flags & (Movement::Right as u32)) == Movement::Right as u32 {
-        camera_force += right_normal;
+        camera_force += flat_right;
     }
     if (movement_flags & (Movement::Left as u32)) == Movement::Left as u32 {
-        camera_force -= right_normal;
+        camera_force -= flat_right
     }
     if (movement_flags & (Movement::Up as u32)) == Movement::Up as u32 {
-        camera_force += up_normal;
+        camera_force += Vec3::Y;
     }
     if (movement_flags & (Movement::Down as u32)) == Movement::Down as u32 {
-        camera_force -= up_normal;
+        camera_force -= Vec3::Y;
     }
     if (movement_flags & (Movement::PitchUp as u32)) == Movement::PitchUp as u32 {
-        camera.apply_pitch(-ROTATION_PER_FRAME_RADIANS);
+        pitch -= ROTATION_PER_FRAME_RADIANS;
     }
     if (movement_flags & (Movement::PitchDown as u32)) == Movement::PitchDown as u32 {
-        camera.apply_pitch(ROTATION_PER_FRAME_RADIANS);
+        pitch += ROTATION_PER_FRAME_RADIANS
     }
     if (movement_flags & (Movement::YawRight as u32)) == Movement::YawRight as u32 {
-        camera.apply_yaw(-ROTATION_PER_FRAME_RADIANS);
+        yaw -= ROTATION_PER_FRAME_RADIANS;
     }
     if (movement_flags & (Movement::YawLeft as u32)) == Movement::YawLeft as u32 {
-        camera.apply_yaw(ROTATION_PER_FRAME_RADIANS);
+        yaw += ROTATION_PER_FRAME_RADIANS;
     }
 
-    *camera.acceleration_mut() = camera_force.scalar_multiply(INPUT_SCALE);
-    camera.update_target_and_forces();
-
-    // maybe we can make this more sophisticated
-    if camera.position().x < 0.0 {
-        (*camera.position_mut()).x = 0.0;
+    CameraForce {
+        forces: camera_force,
+        pitch_radians: pitch,
+        yaw_radians: yaw,
     }
 }

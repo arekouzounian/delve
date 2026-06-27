@@ -18,10 +18,13 @@ impl Collision {
 }
 
 // All the fields needed for an Entity implementation.
+// 06-27-26: yeah im looking at this way later and this is pretty contrived and not performant.
+// I might just overhaul this with something similar to a stripped down ecs. this'll do for now tho
 #[derive(Default, Debug)]
 pub struct EntityFields {
     pub rotation: crate::math::Mat3,
     pub acceleration: Vec3,
     pub velocity: Vec3,
     pub position: Vec3,
+    pub invisible: bool,
 }

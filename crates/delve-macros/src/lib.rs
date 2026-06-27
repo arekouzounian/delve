@@ -49,32 +49,13 @@ pub fn entity(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
 
         impl delve_shared::traits::Entity for #ident {
-            fn rotation(&self) -> &delve_shared::math::Mat3 {
-                &self.entity_fields.rotation
-            }
-            fn rotation_mut(&mut self) -> &mut delve_shared::math::Mat3 {
-                &mut self.entity_fields.rotation
+
+            fn entity_fields(&self) -> &delve_shared::types::EntityFields {
+                &self.entity_fields
             }
 
-            fn position(&self) -> &delve_shared::math::Vec3 {
-                &self.entity_fields.position
-            }
-            fn position_mut(&mut self) -> &mut delve_shared::math::Vec3 {
-                &mut self.entity_fields.position
-            }
-
-            fn velocity(&self) -> &delve_shared::math::Vec3 {
-                &self.entity_fields.velocity
-            }
-            fn velocity_mut(&mut self) -> &mut delve_shared::math::Vec3 {
-                &mut self.entity_fields.velocity
-            }
-
-            fn acceleration(&self) -> &delve_shared::math::Vec3 {
-                &self.entity_fields.acceleration
-            }
-            fn acceleration_mut(&mut self) -> &mut delve_shared::math::Vec3 {
-                &mut self.entity_fields.acceleration
+            fn entity_fields_mut(&mut self) -> &mut delve_shared::types::EntityFields {
+                &mut self.entity_fields
             }
 
             fn apply_forces(&mut self) {

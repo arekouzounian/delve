@@ -17,7 +17,7 @@ macro_rules! mat {
 
 #[macro_export]
 macro_rules! max {
-    ($first:expr, $second:expr $(, $i:expr),*) => {
+    ($first:expr, $second:expr $(, $i:expr)*) => {
         {
             let mut curr_max = $first;
             if $second > curr_max {
@@ -37,7 +37,7 @@ macro_rules! max {
 
 #[macro_export]
 macro_rules! min {
-    ($first: expr, $second: expr $(, $i: expr),*) => {
+    ($first: expr, $second: expr $(, $i: expr)*) => {
         {
             let mut curr_min = $first;
             if $second < curr_min {

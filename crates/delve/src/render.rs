@@ -1,3 +1,4 @@
+use delve_shared::traits::Entity;
 use rand::prelude::*;
 use std::io::{Stdout, Write, stdout};
 use std::sync::{
@@ -7,7 +8,7 @@ use std::sync::{
 
 use crossterm::{ExecutableCommand, QueueableCommand, cursor, style, terminal};
 
-use crate::input::apply_camera_forces;
+use crate::input::construct_camera_forces;
 use crate::scene::Scene;
 use delve_shared::constants::*;
 
@@ -22,8 +23,8 @@ pub struct Cell {
 }
 
 impl Cell {
-    pub const DEFAULT_BRIGHTNESS_SCALE: [char; 8] = ['.', ':', '-', '+', '*', '#', '%', '@'];
-    // pub const BRIGHTNESS_SCALE: [char; 4] = ['░', '▒', '▓', '█'];
+    // pub const DEFAULT_BRIGHTNESS_SCALE: [char; 8] = ['.', ':', '-', '+', '*', '#', '%', '@'];
+    pub const DEFAULT_BRIGHTNESS_SCALE: [char; 4] = ['░', '▒', '▓', '█'];
 
     pub fn select_from_brightness_scale(brightness: f32, scale: &[char]) -> char {
         let bucket = (brightness.clamp(0.0, 1.0) * ((scale.len() - 1) as f32)) as usize;
@@ -141,14 +142,14 @@ pub fn render_frame_swap_buffers(
 
     let aspect_ratio = (width / height) * CELL_WIDTH_TO_HEIGHT_RATIO;
 
-    apply_camera_forces(
-        scene.get_camera_mut(),
-        movement_flags.load(Ordering::Relaxed),
-    );
+    let camera_force =
+        construct_camera_forces(scene.get_normals(), movement_flags.load(Ordering::Relaxed));
+
+    scene.apply_camera_force(camera_force);
 
     // all movement should be done for camera at this point so we can cache location
-    let camera_position = scene.get_camera().get_position();
-    let (forward_normal, right_normal, up_normal) = scene.get_normals();
+    let camera_position = scene.get_camera().entity_fields().position;
+    let normals = scene.get_normals();
 
     for row in 0..buffer.rows() {
         for col in 0..buffer.cols() {
@@ -162,9 +163,9 @@ pub fn render_frame_swap_buffers(
             ndc_x *= aspect_ratio * fov_factor;
             ndc_y *= fov_factor;
 
-            let normalized_ray_direction = (forward_normal
-                + right_normal.scalar_multiply(ndc_x)
-                + up_normal.scalar_multiply(ndc_y))
+            let normalized_ray_direction = (normals.forward
+                + normals.right.scalar_multiply(ndc_x)
+                + normals.up.scalar_multiply(ndc_y))
             .normalize();
 
             if let Some(hit) = scene.intersect(camera_position, normalized_ray_direction) {

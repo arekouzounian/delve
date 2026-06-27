@@ -31,6 +31,10 @@ impl RayIntersect for Sphere {
     /// the collision is at the closest point, the entry.
     /// ray_direction should be normalized
     fn intersect(&self, ray_origin: Vec3, ray_direction_normal: Vec3) -> Option<Collision> {
+        if self.entity_fields.invisible {
+            return None;
+        }
+
         let origin_center_diff = ray_origin - self.entity_fields.position;
 
         // formula: at^2 + bt + c
@@ -63,6 +67,13 @@ impl RayIntersect for Sphere {
             length_coefficient,
         })
     }
+
+    fn closest_point(&self, origin_point: Vec3) -> Vec3 {
+        (origin_point - self.entity_fields.position)
+            .normalize()
+            .scalar_multiply(self.radius)
+            + self.entity_fields.position
+    }
 }
 
 pub struct Cube(RectPrism);
@@ -75,9 +86,33 @@ impl Cube {
     pub fn sin_hover(&mut self, start: std::time::Instant) {
         let theta = start.elapsed().as_secs_f32();
 
-        self.0.entity_fields.position.y = 0.3 * ((theta * 2.0).sin());
+        self.entity_fields_mut().position.y = 0.3 * ((theta * 2.0).sin());
 
-        *self.rotation_mut() = Mat3::from_axis_angle(Vec3::Y, theta);
+        self.entity_fields_mut().rotation = Mat3::from_axis_angle(Vec3::Y, theta);
+    }
+}
+
+impl Entity for Cube {
+    fn entity_fields(&self) -> &delve_shared::types::EntityFields {
+        self.0.entity_fields()
+    }
+
+    fn entity_fields_mut(&mut self) -> &mut delve_shared::types::EntityFields {
+        self.0.entity_fields_mut()
+    }
+
+    fn apply_forces(&mut self) {
+        self.0.apply_forces();
+    }
+}
+
+impl RayIntersect for Cube {
+    fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
+        self.0.intersect(ray_origin, ray_direction)
+    }
+
+    fn closest_point(&self, origin_point: Vec3) -> Vec3 {
+        self.0.closest_point(origin_point)
     }
 }
 
@@ -114,6 +149,10 @@ impl RectPrism {
     /// is equal to center +- height/2
     /// cube = 3 sets of parallel, axis-aligned planes
     pub fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
+        if self.entity_fields.invisible {
+            return None;
+        }
+
         let rotation_transpose: Mat3 = self.entity_fields.rotation.transpose().into();
 
         // transform into local coordinate space
@@ -167,22 +206,40 @@ impl RectPrism {
 
         None
     }
+
+    fn closest_point(&self, origin_point: Vec3) -> Vec3 {
+        let rotation_transpose: Mat3 = self.entity_fields.rotation.transpose().into();
+        let mut op_local = rotation_transpose.apply(origin_point - self.entity_fields.position);
+
+        // clamp it to within our prism dimensions
+        let x_half_extent = self.dimensions.x / 2.0;
+        let y_half_extent = self.dimensions.y / 2.0;
+        let z_half_extent = self.dimensions.z / 2.0;
+        op_local.x = op_local.x.clamp(-x_half_extent, x_half_extent);
+        op_local.y = op_local.y.clamp(-y_half_extent, y_half_extent);
+        op_local.z = op_local.z.clamp(-z_half_extent, z_half_extent);
+
+        // transform back into world space
+        self.entity_fields.rotation.apply(op_local) + self.entity_fields.position
+    }
 }
 
 /// in theory should be infinite, but we would need some sort of dropoff calculation to avoid
 /// infinitely checking ray collisions
+// TODO: we can get away with not storing normals & just using the rotation matrix i think
 #[entity]
 pub struct Plane {
-    /// width, height, length
-    dimensions: Vec3,
+    width: f32,
+    length: f32,
     /// world normal, not local
     normal: Vec3,
 }
 
 impl Plane {
-    pub fn new(dimensions: Vec3, normal: Vec3) -> Self {
+    pub fn new(width: f32, length: f32, normal: Vec3) -> Self {
         Self {
-            dimensions,
+            width,
+            length,
             normal,
             ..Self::default()
         }
@@ -191,6 +248,10 @@ impl Plane {
 
 impl RayIntersect for Plane {
     fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
+        if self.entity_fields.invisible {
+            return None;
+        }
+
         let rotation_transpose: Mat3 = self.entity_fields.rotation.transpose().into();
 
         // transform into local coordinate space
@@ -217,24 +278,31 @@ impl RayIntersect for Plane {
 
         let collision = ray_origin + ray_direction.scalar_multiply(t);
 
-        if collision.x.abs() >= self.dimensions.x / 2.0
-            || collision.y.abs() >= self.dimensions.y / 2.0
-            || collision.z.abs() >= self.dimensions.z / 2.0
-        {
+        if collision.x.abs() > self.width / 2.0 || collision.z.abs() > self.length / 2.0 {
             return None;
         }
 
         Some(Collision {
             surface_normal: self.normal,
-            collision_position: self.entity_fields.rotation.apply(collision) + *self.position(),
+            collision_position: self.entity_fields.rotation.apply(collision)
+                + self.entity_fields.position,
             length_coefficient: t,
         })
     }
-}
 
-#[allow(unused)]
-pub enum Shape {
-    Sphere(Sphere),
-    RectPrism(RectPrism),
-    Cube(Cube),
+    fn closest_point(&self, origin_point: Vec3) -> Vec3 {
+        let rotation_transpose: Mat3 = self.entity_fields.rotation.transpose().into();
+        let mut op_local = rotation_transpose.apply(origin_point - self.entity_fields.position);
+        let local_normal = rotation_transpose.apply(self.normal);
+        op_local -= local_normal.scalar_multiply(op_local.dot(local_normal));
+
+        // clamp it to within our prism dimensions
+        let x_half_extent = self.width / 2.0;
+        let z_half_extent = self.length / 2.0;
+        op_local.x = op_local.x.clamp(-x_half_extent, x_half_extent);
+        op_local.z = op_local.z.clamp(-z_half_extent, z_half_extent);
+
+        // transform back into world space
+        self.entity_fields.rotation.apply(op_local) + self.entity_fields.position
+    }
 }

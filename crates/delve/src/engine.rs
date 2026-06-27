@@ -8,6 +8,7 @@ use std::thread::sleep;
 use std::time::Instant;
 
 use crossterm::{QueueableCommand, cursor, event, terminal};
+use delve_shared::traits::Entity;
 
 use crate::{
     render::{FrameBuffer, render_frame_swap_buffers},
@@ -127,7 +128,7 @@ impl DelveEngine {
         {
             println!(
                 "last camera position: {:?}",
-                self.scene.get_camera().get_position()
+                self.scene.get_camera().entity_fields().position
             );
 
             println!(
