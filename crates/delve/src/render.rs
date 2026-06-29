@@ -24,6 +24,8 @@ pub struct Cell {
 
 impl Cell {
     // pub const DEFAULT_BRIGHTNESS_SCALE: [char; 8] = ['.', ':', '-', '+', '*', '#', '%', '@'];
+    // pub const DEFAULT_BRIGHTNESS_SCALE =
+    //   ".`-_':,;^~+=<>ilI!?1rctjuoezasxvnypwkbdfhqmgJCLUOZQG0DYXKVPAWSB#RHENM$&@";
     pub const DEFAULT_BRIGHTNESS_SCALE: [char; 4] = ['░', '▒', '▓', '█'];
 
     pub fn select_from_brightness_scale(brightness: f32, scale: &[char]) -> char {
@@ -126,6 +128,14 @@ impl FrameBuffer {
     }
 }
 
+// TODO: a naive way to optimize would be to split the framebuf
+// into smaller contiguous framebufs (based on nproc), then
+// pass each smaller framebuf to a thread.
+// The hard part is that we need mutability for the scene.
+// We need to do all our mutations first, then pass off immutable
+// iterators into each thread. Then we do a final pass to combine
+// all the results into a single framebuf. we need to preallocate
+// the intermediate buffers to keep allocs out of the rendering path
 pub fn render_frame_swap_buffers(
     prv_buf: &mut FrameBuffer,
     buffer: &mut FrameBuffer,

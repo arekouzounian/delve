@@ -8,13 +8,15 @@ use std::thread::sleep;
 use std::time::Instant;
 
 use crossterm::{QueueableCommand, cursor, event, terminal};
-use delve_shared::traits::Entity;
 
 use crate::{
     render::{FrameBuffer, render_frame_swap_buffers},
     scene::Scene,
 };
 use delve_shared::constants::*;
+
+#[cfg(profiling_enabled)]
+use delve_shared::traits::Entity;
 
 pub struct DelveEngine {
     // TODO: how to deal with resizing?
@@ -113,7 +115,7 @@ impl DelveEngine {
 
             #[cfg(profiling_enabled)]
             {
-                elapsed_sums += elapsed.as_micros();
+                elapsed_sums += elapsed.as_millis();
                 samples += 1;
             }
 
@@ -132,7 +134,7 @@ impl DelveEngine {
             );
 
             println!(
-                "\nelapsed_sums: {}\nsamples: {}\navg frame render time: {} micros",
+                "\nelapsed_sums: {}\nsamples: {}\navg frame render time: {} millis",
                 elapsed_sums,
                 samples,
                 (elapsed_sums as f64) / (samples as f64)

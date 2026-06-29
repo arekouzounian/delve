@@ -1,13 +1,7 @@
-use std::collections::HashMap;
-
 use delve_macros::entity;
-use delve_shared::{
-    constants::INPUT_SCALE,
-    math::Vec3,
-    traits::{Entity, IntersectableEntity},
-    types::Collision,
-};
+use delve_shared::{constants::INPUT_SCALE, math::Vec3, traits::Entity, types::Collision};
 
+use crate::entities::Entities;
 use crate::input::CameraForce;
 
 #[entity]
@@ -106,7 +100,7 @@ impl Light {
 
 pub struct Scene {
     camera: Camera,
-    objects: HashMap<String, Box<dyn IntersectableEntity>>,
+    objects: Vec<Entities>,
     lights: Vec<Light>,
     ambient_lighting: f32,
 }
@@ -116,15 +110,14 @@ impl Scene {
     pub fn new(camera: Camera, ambient_lighting: f32) -> Self {
         Self {
             camera,
-            objects: HashMap::new(),
+            objects: Vec::new(),
             lights: Vec::new(),
             ambient_lighting,
         }
     }
 
-    // TODO: object de-registration/ID tracking
-    pub fn register_shape(&mut self, key: String, entity: Box<dyn IntersectableEntity>) {
-        self.objects.insert(key, entity);
+    pub fn register_shape(&mut self, entity: Entities) {
+        self.objects.push(entity);
     }
 
     pub fn register_light(&mut self, light: Light) {
@@ -164,7 +157,7 @@ impl Scene {
     pub fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
         let mut closest: Option<Collision> = None;
 
-        for shape in self.objects.values() {
+        for shape in self.objects.iter() {
             if let Some(collision) = shape.intersect(ray_origin, ray_direction) {
                 match closest.take() {
                     None => closest = Some(collision),
@@ -215,7 +208,7 @@ impl Scene {
         };
 
         // horizontal (wall) collision: cylinder closest-point approach
-        for entity in self.objects.values() {
+        for entity in self.objects.iter() {
             let closest = entity.closest_point(self.camera.entity_fields.position);
             let delta = self.camera.entity_fields.position - closest;
 

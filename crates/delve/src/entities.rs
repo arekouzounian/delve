@@ -3,11 +3,38 @@ use std::ops::{Deref, DerefMut};
 use delve_shared::{
     math::{Mat3, Vec3},
     max, min,
-    traits::{Entity, RayIntersect},
+    traits::Entity,
     types::Collision,
 };
 
 use delve_macros::entity;
+
+pub enum Entities {
+    Sphere(Sphere),
+    RectPrism(RectPrism),
+    Cube(Cube),
+    Plane(Plane),
+}
+
+impl Entities {
+    pub fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
+        match self {
+            Self::Sphere(s) => s.intersect(ray_origin, ray_direction),
+            Self::RectPrism(r) => r.intersect(ray_origin, ray_direction),
+            Self::Cube(c) => c.intersect(ray_origin, ray_direction),
+            Self::Plane(p) => p.intersect(ray_origin, ray_direction),
+        }
+    }
+
+    pub fn closest_point(&self, origin_point: Vec3) -> Vec3 {
+        match self {
+            Self::Sphere(s) => s.closest_point(origin_point),
+            Self::RectPrism(r) => r.closest_point(origin_point),
+            Self::Cube(c) => c.closest_point(origin_point),
+            Self::Plane(p) => p.closest_point(origin_point),
+        }
+    }
+}
 
 #[entity]
 pub struct Sphere {
@@ -21,9 +48,7 @@ impl Sphere {
             ..Self::default()
         }
     }
-}
 
-impl RayIntersect for Sphere {
     /// The way this works is by solving for the points that the ray would
     /// collide with the sphere. In this case, we only return a collision
     /// if there are exactly two points that the ray collides with the sphere
@@ -103,16 +128,6 @@ impl Entity for Cube {
 
     fn apply_forces(&mut self) {
         self.0.apply_forces();
-    }
-}
-
-impl RayIntersect for Cube {
-    fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
-        self.0.intersect(ray_origin, ray_direction)
-    }
-
-    fn closest_point(&self, origin_point: Vec3) -> Vec3 {
-        self.0.closest_point(origin_point)
     }
 }
 
@@ -244,9 +259,7 @@ impl Plane {
             ..Self::default()
         }
     }
-}
 
-impl RayIntersect for Plane {
     fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
         if self.entity_fields.invisible {
             return None;

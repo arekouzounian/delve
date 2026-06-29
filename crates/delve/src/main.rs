@@ -3,8 +3,8 @@ use std::sync::{Arc, atomic::AtomicBool};
 use std::thread;
 
 use delve::engine::DelveEngine;
-use delve::entities::Plane;
 use delve::entities::{Cube, Sphere};
+use delve::entities::{Entities, Plane};
 use delve::input::listen_for_input;
 use delve::scene::{Camera, Light, Scene};
 use delve_shared::constants::*;
@@ -28,20 +28,16 @@ fn main() -> std::io::Result<()> {
     let mut sphere = Sphere::new(1.0);
     sphere.entity_fields_mut().position = Vec3::new(0.0, 1.0, 0.0);
 
-    scene.register_shape(String::from("friendly_sphere"), Box::new(sphere));
+    scene.register_shape(Entities::Sphere(sphere));
 
     // ground
     let ground = Plane::new(10.0, 10.0, Vec3::Y);
-    scene.register_shape(String::from("ground"), Box::new(ground));
+    scene.register_shape(Entities::Plane(ground));
 
     let mut cube = Cube::new(1.0);
     cube.entity_fields_mut().invisible = false;
     cube.entity_fields_mut().position = Vec3::new(0.0, 0.0, 5.0);
-    scene.register_shape(String::from("evil_cube"), Box::new(cube));
-
-    // rotate about y axis
-    // let rect = RectPrism::new(Vec3::new(0.5, 0.5, 4.0), Vec3::new(0.0, 0.0, 1.0));
-    // scene.register_shape(String::from("long_prism"), Shape::RectPrism(rect));
+    scene.register_shape(Entities::Cube(cube));
 
     let engine = DelveEngine::new(scene, movement_flags, running)?;
     engine.run()?;
