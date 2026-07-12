@@ -24,11 +24,16 @@ kitten @ set-font-size "$FONT_SIZE"
 reset() {
   kitten @ set-font-size "$DEFAULT"
 }
+trap reset SIGINT
 
+SAMPLES=600
 if [ "$PROFILE" -eq 1 ]; then
   export RUSTFLAGS="$RUSTFLAGS --cfg profiling_enabled"
+  cargo build --release
+  perf record -a -g -F $SAMPLES target/release/delve
+  reset
+  perf script report gecko
+else
+  cargo run --release
+  reset
 fi
-
-trap reset SIGINT
-cargo run --release
-reset

@@ -1,2 +1,5 @@
 /target
 scratch.md
+perf.data
+perf.data.old
+gecko_profile.json

@@ -288,16 +288,18 @@ impl Mat3 {
         Self(Matrix::<f32, 3, 3>::identity())
     }
 
-    /// ive been trying to do this through the type system but its too much of a mess.
-    /// TODO: can we make this just use the matrix mult math without having extra allocs
-    /// from type conversions
-    /// idk look at this later it's probably horribly inefficient
+    /// turns out hand-rolling this is way faster
     pub fn apply(&self, rhs: Vec3) -> Vec3 {
-        Vec3::new(
-            Vec3::from(self.0.row(0)).dot(rhs),
-            Vec3::from(self.0.row(1)).dot(rhs),
-            Vec3::from(self.0.row(2)).dot(rhs),
-        )
+        let mut ret = Vec3::ZERO;
+
+        ret.x =
+            (self.inner[0][0] * rhs.x) + (self.inner[0][1] * rhs.y) + (self.inner[0][2] * rhs.z);
+        ret.y =
+            (self.inner[1][0] * rhs.x) + (self.inner[1][1] * rhs.y) + (self.inner[1][2] * rhs.z);
+        ret.z =
+            (self.inner[2][0] * rhs.x) + (self.inner[2][1] * rhs.y) + (self.inner[2][2] * rhs.z);
+
+        ret
     }
 
     /// returns a rotation matrix; when you apply it to a vector, it

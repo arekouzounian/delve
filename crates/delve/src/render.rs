@@ -1,16 +1,6 @@
-use delve_shared::traits::Entity;
-use rand::prelude::*;
 use std::io::{Stdout, Write, stdout};
-use std::sync::{
-    Arc,
-    atomic::{AtomicU32, Ordering},
-};
 
 use crossterm::{ExecutableCommand, QueueableCommand, cursor, style, terminal};
-
-use crate::input::construct_camera_forces;
-use crate::scene::Scene;
-use delve_shared::constants::*;
 
 pub trait BufType: Write + ExecutableCommand + QueueableCommand {}
 impl<T: Write + ExecutableCommand + QueueableCommand> BufType for T {}
@@ -48,15 +38,29 @@ impl Cell {
 
 // assuming stdout for now
 pub struct FrameBuffer {
-    inner_buf: Vec<Vec<Option<Cell>>>,
+    // outer vec holds partitions, each vec is a single partition
+    inner_buf: Vec<Vec<Vec<Option<Cell>>>>,
     stdout_handle: Stdout,
+    rows: u16,
+    cols: u16,
 }
 
 impl FrameBuffer {
-    pub fn new(rows: u16, cols: u16) -> Self {
+    pub fn new(partitions_vec: Vec<u16>, total_rows: u16, columns_per_row: u16) -> Self {
+        let mut outer = Vec::with_capacity(partitions_vec.len());
+        for partition in 0..partitions_vec.len() {
+            let num_rows_in_partition = partitions_vec[partition] as usize;
+            let rows_in_partition =
+                vec![vec![None; columns_per_row as usize]; num_rows_in_partition];
+
+            outer.push(rows_in_partition);
+        }
+
         Self {
-            inner_buf: vec![vec![None; cols as usize]; rows as usize],
+            inner_buf: outer,
             stdout_handle: stdout(),
+            rows: total_rows,
+            cols: columns_per_row,
         }
     }
 
@@ -70,123 +74,84 @@ impl FrameBuffer {
         Ok(())
     }
 
+    /// these operations are cheap because the vec object itself is a fat pointer,
+    /// not the actual memory
+    pub fn take_partition(&mut self, index: usize) -> Vec<Vec<Option<Cell>>> {
+        std::mem::take(&mut self.inner_buf[index])
+    }
+
+    pub fn put_partition(&mut self, index: usize, partition: Vec<Vec<Option<Cell>>>) {
+        self.inner_buf[index] = partition;
+    }
+
     pub fn clear(&mut self) {
-        for row in &mut self.inner_buf {
-            for cell in row {
-                cell.take();
+        for partition in &mut self.inner_buf {
+            for row in partition {
+                for cell in row {
+                    cell.take();
+                }
             }
         }
     }
 
     pub fn rows(&self) -> u16 {
-        self.inner_buf.len() as u16
+        self.rows
     }
 
     pub fn cols(&self) -> u16 {
-        self.inner_buf[0].len() as u16
+        self.cols
     }
 
-    pub fn draw_to_stdout(&mut self, prv_buf: &mut FrameBuffer) -> std::io::Result<()> {
-        let rows = self.inner_buf.len();
-        let cols = self.inner_buf[0].len();
+    pub fn partitions(&self) -> usize {
+        self.inner_buf.len()
+    }
 
-        assert!(rows == prv_buf.inner_buf.len());
-        assert!(cols == prv_buf.inner_buf[0].len());
+    pub fn draw_to_stdout(&mut self, prv_buf: &FrameBuffer) -> std::io::Result<()> {
+        assert_eq!(self.rows, prv_buf.rows);
+        assert_eq!(self.cols, prv_buf.cols);
+        assert_eq!(self.inner_buf.len(), prv_buf.inner_buf.len());
 
-        let mut curr_row = 0;
-        while curr_row < rows {
-            let mut curr_col = 0;
+        let num_partitions = self.inner_buf.len();
 
-            while curr_col < cols {
-                let mut curr_cell = &self.inner_buf[curr_row][curr_col];
-                let mut prev_cell = &prv_buf.inner_buf[curr_row][curr_col];
+        let mut global_row = 0;
+        for curr_partition in 0..num_partitions {
+            let num_rows = self.inner_buf[curr_partition].len();
+            assert_eq!(num_rows, prv_buf.inner_buf[curr_partition].len());
 
-                if curr_cell.ne(prev_cell) {
+            for curr_row in 0..num_rows {
+                let mut curr_col = 0u16;
+
+                while curr_col < self.cols {
+                    let curr_cell = &self.inner_buf[curr_partition][curr_row][curr_col as usize];
+                    let prev_cell = &prv_buf.inner_buf[curr_partition][curr_row][curr_col as usize];
+
+                    if curr_cell.eq(prev_cell) {
+                        curr_col += 1;
+                        continue;
+                    }
+
                     self.stdout_handle
-                        .queue(cursor::MoveTo(curr_col as u16, curr_row as u16))?;
+                        .queue(cursor::MoveTo(curr_col, global_row))?;
 
-                    while curr_col < cols - 1 && curr_cell.ne(prev_cell) {
-                        match curr_cell {
+                    // coalesce contiguous differences within this row
+                    while curr_col < self.cols {
+                        let curr = &self.inner_buf[curr_partition][curr_row][curr_col as usize];
+                        let prev = &prv_buf.inner_buf[curr_partition][curr_row][curr_col as usize];
+                        if curr.eq(prev) {
+                            break;
+                        }
+                        match curr {
                             Some(c) => self.stdout_handle.queue(style::Print(c.rune))?,
                             None => self.stdout_handle.queue(style::Print(' '))?,
                         };
-
                         curr_col += 1;
-
-                        curr_cell = &self.inner_buf[curr_row][curr_col];
-                        prev_cell = &prv_buf.inner_buf[curr_row][curr_col];
                     }
                 }
 
-                curr_col += 1;
+                global_row += 1;
             }
-
-            curr_row += 1;
         }
 
         self.stdout_handle.flush()
     }
-}
-
-// TODO: a naive way to optimize would be to split the framebuf
-// into smaller contiguous framebufs (based on nproc), then
-// pass each smaller framebuf to a thread.
-// The hard part is that we need mutability for the scene.
-// We need to do all our mutations first, then pass off immutable
-// iterators into each thread. Then we do a final pass to combine
-// all the results into a single framebuf. we need to preallocate
-// the intermediate buffers to keep allocs out of the rendering path
-pub fn render_frame_swap_buffers(
-    prv_buf: &mut FrameBuffer,
-    buffer: &mut FrameBuffer,
-    scene: &mut Scene,
-    movement_flags: &Arc<AtomicU32>,
-    _rng: &mut ThreadRng,
-) -> std::io::Result<()> {
-    buffer.clear();
-
-    let width = buffer.cols() as f32;
-    let height = buffer.rows() as f32;
-
-    // let scale: Vec<char> = ".`-_':,;^~+=<>ilI!?1rctjuoezasxvnypwkbdfhqmgJCLUOZQG0DYXKVPAWSB#RHENM$&@".chars().collect();
-
-    let aspect_ratio = (width / height) * CELL_WIDTH_TO_HEIGHT_RATIO;
-
-    let camera_force =
-        construct_camera_forces(scene.get_normals(), movement_flags.load(Ordering::Relaxed));
-
-    scene.apply_camera_force(camera_force);
-
-    // all movement should be done for camera at this point so we can cache location
-    let camera_position = scene.get_camera().entity_fields().position;
-    let normals = scene.get_normals();
-
-    for row in 0..buffer.rows() {
-        for col in 0..buffer.cols() {
-            // map to normalized device coordinates
-            // center is (0,0), top right is (1,1), bottom left is (-1,-1)
-            let mut ndc_x = ((2.0 * col as f32) - width) / width;
-            let mut ndc_y = (height - (2.0 * row as f32)) / height;
-
-            let fov_factor = scene.get_camera().fov_factor();
-            // adjust for aspect ratio
-            ndc_x *= aspect_ratio * fov_factor;
-            ndc_y *= fov_factor;
-
-            let normalized_ray_direction = (normals.forward
-                + normals.right.scalar_multiply(ndc_x)
-                + normals.up.scalar_multiply(ndc_y))
-            .normalize();
-
-            if let Some(hit) = scene.intersect(camera_position, normalized_ray_direction) {
-                let brightness = scene.lambertian_brightness(&hit);
-                buffer.inner_buf[row as usize][col as usize] =
-                    Some(Cell::default_scale(brightness));
-            }
-        }
-    }
-
-    buffer.draw_to_stdout(prv_buf)?;
-    std::mem::swap(buffer, prv_buf);
-    Ok(())
 }
