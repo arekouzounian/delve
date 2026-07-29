@@ -7,15 +7,16 @@ use std::sync::{
 use std::thread::sleep;
 use std::time::Instant;
 
-use crossterm::{QueueableCommand, cursor, event, terminal};
-use delve_shared::traits::Entity;
-
 use crate::{
     input::construct_camera_forces,
     render::{Cell, FrameBuffer},
     scene::Scene,
 };
 use delve_shared::constants::*;
+use delve_shared::traits::Entity;
+
+use crossterm::{QueueableCommand, cursor, event, terminal};
+use log::info;
 
 pub struct DelveEngine {
     // TODO: how to deal with resizing?
@@ -29,6 +30,9 @@ pub struct DelveEngine {
 }
 
 impl DelveEngine {
+    const SCALE: &'static str =
+        ".`-_':,;^~+=<>ilI!?1rctjuoezasxvnypwkbdfhqmgJCLUOZQG0DYXKVPAWSB#RHENM$&@";
+
     pub fn new(
         scene: Scene,
         movement_flags: Arc<AtomicU32>,
@@ -116,6 +120,8 @@ impl DelveEngine {
         assert!(!self.is_running.load(Ordering::SeqCst));
         self.is_running.store(true, Ordering::SeqCst);
 
+        info!("starting the delve engine.");
+
         #[cfg(profiling_enabled)]
         let mut samples: u64 = 0;
         #[cfg(profiling_enabled)]
@@ -138,6 +144,8 @@ impl DelveEngine {
         // each partition holds a number of contiguous rows.
         let (main_send, main_recv) = std::sync::mpsc::channel::<(usize, Vec<Vec<Option<Cell>>>)>();
 
+        info!("spawned {} rendering threads", thread_count);
+
         let mut partition_start_row: u16 = 0;
         for &row_count in &partition_row_counts {
             let (thread_send, thread_recv) =
@@ -152,9 +160,12 @@ impl DelveEngine {
             let start_row = partition_start_row;
 
             handles.push(std::thread::spawn(move || {
+                info!("renderer handling thread spawned.");
                 let width = cols_per_row as f32;
                 let height = total_rows as f32;
                 let aspect_ratio = (width / height) * CELL_WIDTH_TO_HEIGHT_RATIO;
+
+                let scale: Vec<char> = DelveEngine::SCALE.chars().collect();
 
                 // on each frame the main thread sends us our partition — the block of rows
                 // starting at `start_row`.
@@ -185,7 +196,8 @@ impl DelveEngine {
                                 scene.intersect(camera_position, normalized_ray_direction)
                             {
                                 let brightness = scene.lambertian_brightness(&hit);
-                                row_buf[col as usize] = Some(Cell::default_scale(brightness));
+                                row_buf[col as usize] =
+                                    Some(Cell::with_scale(brightness, &scale[..]));
                             } else {
                                 row_buf[col as usize] = None;
                             }
@@ -197,6 +209,8 @@ impl DelveEngine {
                         break;
                     }
                 }
+
+                info!("exiting renderer");
             }));
 
             thread_senders.push(thread_send);
@@ -206,6 +220,7 @@ impl DelveEngine {
         // drop the original, workers have copies
         drop(main_send);
 
+        info!("beginning main rendering loop");
         'outer: while self.is_running.load(Ordering::SeqCst) {
             let start_time = Instant::now();
 

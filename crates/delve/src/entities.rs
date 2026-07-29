@@ -115,6 +115,10 @@ impl Cube {
 
         self.entity_fields_mut().rotation = Mat3::from_axis_angle(Vec3::Y, theta);
     }
+
+    pub fn length(&self) -> f32 {
+        self.0.dimensions.x
+    }
 }
 
 impl Entity for Cube {
@@ -157,6 +161,18 @@ impl RectPrism {
             dimensions,
             ..Self::default()
         }
+    }
+
+    pub fn length(&self) -> f32 {
+        self.dimensions.x
+    }
+
+    pub fn width(&self) -> f32 {
+        self.dimensions.z
+    }
+
+    pub fn height(&self) -> f32 {
+        self.dimensions.y
     }
 
     /// slab method; axis-aligned cube

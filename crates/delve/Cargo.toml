@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+chrono = "0.4.45"
 crossterm = "0.29.0"
 delve-macros = { version = "0.1.0", path = "../delve-macros" }
 delve-shared = { version = "0.1.0", path = "../delve-shared" }
+log = "0.4.33"
 num-traits = "0.2.19"
 rand = "0.10.1"
 

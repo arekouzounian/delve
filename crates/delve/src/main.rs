@@ -1,18 +1,28 @@
+use std::fs::read_dir;
 use std::sync::atomic::AtomicU32;
 use std::sync::{Arc, atomic::AtomicBool};
 use std::thread;
 
 use delve::engine::DelveEngine;
-use delve::entities::{Cube, Sphere};
+use delve::entities::{Cube, RectPrism};
 use delve::entities::{Entities, Plane};
 use delve::input::listen_for_input;
+use delve::log::DelveLogger;
 use delve::scene::{Camera, Light, Scene};
 use delve_shared::constants::*;
 use delve_shared::{math::Vec3, traits::Entity};
 
+use log::{Level, LevelFilter, Log, set_logger, set_max_level};
+
+static DELVE_LOGGER: DelveLogger = DelveLogger::new(Level::Info, true, 1024);
+
 fn main() -> std::io::Result<()> {
     let running = Arc::new(AtomicBool::new(false));
     let running_clone = running.clone();
+
+    DELVE_LOGGER.init(None);
+    let _ = set_logger(&DELVE_LOGGER);
+    set_max_level(LevelFilter::Info);
 
     let movement_flags = Arc::new(AtomicU32::new(0));
     let mov_flags_clone = movement_flags.clone();
@@ -24,25 +34,62 @@ fn main() -> std::io::Result<()> {
     let mut scene = Scene::new(camera, AMBIENT_LIGHTING);
 
     scene.register_light(Light::new(Vec3::new(0.0, 2.0, -1.0), 0.5));
-
-    let mut sphere = Sphere::new(1.0);
-    sphere.entity_fields_mut().position = Vec3::new(0.0, 1.0, 0.0);
-
-    scene.register_shape(Entities::Sphere(sphere));
-
     // ground
-    let ground = Plane::new(10.0, 10.0, Vec3::Y);
+    let ground = Plane::new(20.0, 20.0, Vec3::Y);
     scene.register_shape(Entities::Plane(ground));
 
-    let mut cube = Cube::new(1.0);
-    cube.entity_fields_mut().invisible = false;
-    cube.entity_fields_mut().position = Vec3::new(0.0, 0.0, 5.0);
-    scene.register_shape(Entities::Cube(cube));
+    // draw a number of spheres based on current directory.
+    let dir = read_dir("/home/arek")?;
+    let mut new_objects = Vec::new();
+    let padding = 0.5;
+    for entry in dir {
+        let entry = entry?;
+        let meta = entry.metadata()?;
+        if meta.is_dir() {
+            // prism width proportional to # of files
+            let subfiles = read_dir(entry.path())?.count() as f32;
+            let width = 0.1 * subfiles;
+            // let prism = RectPrism::new(Vec3::new(width, 2.0, 0.1));
+            let prism = RectPrism::new(Vec3::new(1.0, 1.0, 1.0));
+            new_objects.push(Entities::RectPrism(prism));
+        } else {
+            // cube size proportional to file size
+            let width = meta.len() as f32 / 1024.0;
+            // let cube = Cube::new((meta.len() as f32) / 1024.0);
+            let cube = Cube::new(1.0);
+            new_objects.push(Entities::Cube(cube));
+        }
+    }
+
+    let z_offset = 10.0;
+
+    let i = 0.0;
+    // place them in a line
+    for obj in new_objects {
+        match obj {
+            Entities::Cube(mut c) => {
+                // let width = c.length() / 2.0;
+                // c.entity_fields_mut().position = Vec3::new(running_width, width, z_offset);
+                c.entity_fields_mut().position = Vec3::new(2.0 * i, 2.0, z_offset);
+                scene.register_shape(Entities::Cube(c));
+                //running_width -= width + 0.5;
+            }
+            Entities::RectPrism(mut r) => {
+                let width = r.length();
+                // r.entity_fields_mut().position = Vec3::new(running_width, 1.0, z_offset);
+                r.entity_fields_mut().position = Vec3::new(2.0 * i, 2.0, z_offset);
+                scene.register_shape(Entities::RectPrism(r));
+                //running_width -= width + 0.5;
+            }
+            _ => (),
+        }
+    }
 
     let engine = DelveEngine::new(scene, movement_flags, running)?;
     engine.run()?;
 
     let _ = input_thread.join().expect("something went wrong");
+    DELVE_LOGGER.flush();
 
     Ok(())
 }

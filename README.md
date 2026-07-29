@@ -2,13 +2,12 @@
 ---
 An ASCII rendering engine & video game for the terminal. Hand-coded, for enjoyment purposes only.
 
-The goal is to layer a simple game atop this engine, so it may later involve physics and all that stuff. This is a simple project that's just for fun. No AI allowed to write code, although Claude was pretty helpful in explaining a lot of the vector math, and for establishing a preliminary roadmap in [[roadmap.md]].
+The goal is to layer a simple game atop this engine, so it may later involve physics and all that stuff. This is a simple project that's just for fun. No AI allowed to write code, although Claude was pretty helpful in explaining a lot of the vector math, and for establishing a preliminary roadmap.
 
 The goal is to adopt few dependencies; `crossterm` is the major way the engine performs actual terminal rendering, and some number crates (`num-trait`, `rand`) will also likely enter the picture. But other than that I want to try to make it as light on deps as possible.
 
 ## Limitations
 Relies on the kitty extended keyboard protocol for proper movement, so will only be compatible with terminals that support that protocol. If you use Alacritty, iTerm2, kitty (of course), or perhaps even Windows Terminal (ew) > v1.25 (according to the AI overview, which is never wrong), you should be good. Otherwise, switch to a better terminal.
-
 
 ## Running
 No packaged binaries just yet. Just download the source and run:
