@@ -16,6 +16,23 @@ pub enum Entities {
     Plane(Plane),
 }
 
+impl std::fmt::Debug for Entities {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Sphere(s) => f.write_fmt(format_args!("Sphere(radius: {})", s.radius)),
+            Self::RectPrism(r) => f.write_fmt(format_args!(
+                "RectPrism(width: {}, length: {}, height: {})",
+                r.dimensions.x, r.dimensions.z, r.dimensions.y
+            )),
+            Self::Cube(c) => f.write_fmt(format_args!("Cube(length: {})", c.0.dimensions.x)),
+            Self::Plane(p) => f.write_fmt(format_args!(
+                "Plane(width: {}, length: {})",
+                p.width, p.length
+            )),
+        }
+    }
+}
+
 impl Entities {
     pub fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
         match self {

@@ -114,6 +114,65 @@ impl DelveEngine {
         rows_vec
     }
 
+    fn thread_handler(
+        cols_per_row: u16,
+        total_rows: u16,
+        start_row: u16,
+        main_send: std::sync::mpsc::Sender<(usize, Vec<Vec<Option<Cell>>>)>,
+        thread_recv: std::sync::mpsc::Receiver<(usize, Vec<Vec<Option<Cell>>>)>,
+        is_running: Arc<AtomicBool>,
+        scene: Arc<RwLock<Scene>>,
+    ) {
+        info!("renderer handling thread spawned.");
+        let width = cols_per_row as f32;
+        let height = total_rows as f32;
+        let aspect_ratio = (width / height) * CELL_WIDTH_TO_HEIGHT_RATIO;
+
+        let scale: Vec<char> = DelveEngine::SCALE.chars().collect();
+
+        // on each frame the main thread sends us our partition — the block of rows
+        // starting at `start_row`.
+        for (partition_index, mut partition) in thread_recv.iter() {
+            // scene read lock acquired, ensures no more modifications and can be shared
+            // among multiple concurrent readers
+            let scene = scene.read().unwrap();
+
+            let normals = scene.get_normals();
+            let fov_factor = scene.get_camera().fov_factor();
+            let camera_position = scene.get_camera().entity_fields().position;
+
+            for (row_idx, row_buf) in partition.iter_mut().enumerate() {
+                let row = start_row + row_idx as u16;
+                let mut ndc_y = (height - (2.0 * row as f32)) / height;
+                ndc_y *= fov_factor;
+
+                for col in 0..cols_per_row {
+                    let mut ndc_x = ((2.0 * col as f32) - width) / width;
+                    ndc_x *= aspect_ratio * fov_factor;
+
+                    let normalized_ray_direction = (normals.forward
+                        + normals.right.scalar_multiply(ndc_x)
+                        + normals.up.scalar_multiply(ndc_y))
+                    .normalize();
+
+                    if let Some(hit) = scene.intersect(camera_position, normalized_ray_direction) {
+                        let brightness = scene.lambertian_brightness(&hit);
+                        row_buf[col as usize] = Some(Cell::with_scale(brightness, &scale[..]));
+                    } else {
+                        row_buf[col as usize] = None;
+                    }
+                }
+            }
+
+            if let Err(_e) = main_send.send((partition_index, partition)) {
+                is_running.store(false, Ordering::SeqCst);
+                break;
+            }
+        }
+
+        info!("exiting renderer");
+    }
+
     /// blocks until is_running is set to false.
     /// panics if called more than once.
     pub fn run(mut self) -> std::io::Result<()> {
@@ -160,57 +219,15 @@ impl DelveEngine {
             let start_row = partition_start_row;
 
             handles.push(std::thread::spawn(move || {
-                info!("renderer handling thread spawned.");
-                let width = cols_per_row as f32;
-                let height = total_rows as f32;
-                let aspect_ratio = (width / height) * CELL_WIDTH_TO_HEIGHT_RATIO;
-
-                let scale: Vec<char> = DelveEngine::SCALE.chars().collect();
-
-                // on each frame the main thread sends us our partition — the block of rows
-                // starting at `start_row`.
-                for (partition_index, mut partition) in thread_recv.iter() {
-                    // scene read lock acquired, ensures no more modifications and can be shared
-                    // among multiple concurrent readers
-                    let scene = scene.read().unwrap();
-
-                    let normals = scene.get_normals();
-                    let fov_factor = scene.get_camera().fov_factor();
-                    let camera_position = scene.get_camera().entity_fields().position;
-
-                    for (row_idx, row_buf) in partition.iter_mut().enumerate() {
-                        let row = start_row + row_idx as u16;
-                        let mut ndc_y = (height - (2.0 * row as f32)) / height;
-                        ndc_y *= fov_factor;
-
-                        for col in 0..cols_per_row {
-                            let mut ndc_x = ((2.0 * col as f32) - width) / width;
-                            ndc_x *= aspect_ratio * fov_factor;
-
-                            let normalized_ray_direction = (normals.forward
-                                + normals.right.scalar_multiply(ndc_x)
-                                + normals.up.scalar_multiply(ndc_y))
-                            .normalize();
-
-                            if let Some(hit) =
-                                scene.intersect(camera_position, normalized_ray_direction)
-                            {
-                                let brightness = scene.lambertian_brightness(&hit);
-                                row_buf[col as usize] =
-                                    Some(Cell::with_scale(brightness, &scale[..]));
-                            } else {
-                                row_buf[col as usize] = None;
-                            }
-                        }
-                    }
-
-                    if let Err(_e) = main_send.send((partition_index, partition)) {
-                        is_running.store(false, Ordering::SeqCst);
-                        break;
-                    }
-                }
-
-                info!("exiting renderer");
+                Self::thread_handler(
+                    cols_per_row,
+                    total_rows,
+                    start_row,
+                    main_send,
+                    thread_recv,
+                    is_running,
+                    scene,
+                )
             }));
 
             thread_senders.push(thread_send);

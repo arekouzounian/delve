@@ -1,6 +1,10 @@
 use std::io::{Stdout, Write, stdout};
 
-use crossterm::{ExecutableCommand, QueueableCommand, cursor, style, terminal};
+use crossterm::{
+    ExecutableCommand, QueueableCommand, cursor,
+    style::{self, Stylize},
+    terminal,
+};
 
 pub trait BufType: Write + ExecutableCommand + QueueableCommand {}
 impl<T: Write + ExecutableCommand + QueueableCommand> BufType for T {}
@@ -19,7 +23,8 @@ impl Cell {
     // pub const DEFAULT_BRIGHTNESS_SCALE: [char; 4] = ['░', '▒', '▓', '█'];
 
     pub fn select_from_brightness_scale(brightness: f32, scale: &[char]) -> char {
-        let bucket = (brightness.clamp(0.0, 1.0) * ((scale.len() - 1) as f32)) as usize;
+        let brightness = brightness.clamp(0.0, 1.0);
+        let bucket = (brightness * ((scale.len() - 1) as f32)) as usize;
 
         scale[bucket]
     }
@@ -34,6 +39,19 @@ impl Cell {
             rune: Cell::select_from_brightness_scale(brightness, scale),
         }
     }
+
+    pub fn draw<'a, 'b>(&'a self, stdout_handle: &'b mut Stdout) -> std::io::Result<&'b mut Stdout>
+    where
+        'a: 'b,
+    {
+        if self.brightness < 0.33 {
+            stdout_handle.queue(style::Print(self.rune.dim()))
+        } else if self.brightness < 0.66 {
+            stdout_handle.queue(style::Print(self.rune))
+        } else {
+            stdout_handle.queue(style::Print(self.rune.bold()))
+        }
+    }
 }
 
 // assuming stdout for now
@@ -46,12 +64,13 @@ pub struct FrameBuffer {
 }
 
 impl FrameBuffer {
+    /// partitions_vec is a flat array that tells us how many rows each partition should handle
+    /// each partition is a collection of rows that gets handed off to its own thread
     pub fn new(partitions_vec: Vec<u16>, total_rows: u16, columns_per_row: u16) -> Self {
         let mut outer = Vec::with_capacity(partitions_vec.len());
-        for partition in 0..partitions_vec.len() {
-            let num_rows_in_partition = partitions_vec[partition] as usize;
+        for num_rows_in_partition in &partitions_vec {
             let rows_in_partition =
-                vec![vec![None; columns_per_row as usize]; num_rows_in_partition];
+                vec![vec![None; columns_per_row as usize]; *num_rows_in_partition as usize];
 
             outer.push(rows_in_partition);
         }
@@ -140,10 +159,16 @@ impl FrameBuffer {
                         if curr.eq(prev) {
                             break;
                         }
+
                         match curr {
-                            Some(c) => self.stdout_handle.queue(style::Print(c.rune))?,
-                            None => self.stdout_handle.queue(style::Print(' '))?,
+                            Some(c) => {
+                                c.draw(&mut self.stdout_handle)?;
+                            }
+                            None => {
+                                self.stdout_handle.queue(style::Print(' '))?;
+                            }
                         };
+
                         curr_col += 1;
                     }
                 }

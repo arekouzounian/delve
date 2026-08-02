@@ -1,4 +1,15 @@
 //! Logging
+//! Somewhat naive implementation. Essentially we have a single global logger that gets written to.
+//! Flushing happens based on the size of the buffer, not handled by a central thread but rather
+//! whoever fills the buffer first. Synchronization done via a global mutex.
+//!
+//! The reasoning behind this is because thread local loggers would be hard to make flush properly.
+//! Also, trying to make thread local senders to a global receiver runs into issues because
+//! Receiver doesn't implement Send.
+//!
+//! set DLV_LOG_TARGETS="<comma delimited list>" as an env variable to filter.
+//!
+//! TODO: revisit this if log perf becomes a problem.
 
 use log::Level;
 use std::fs::File;
@@ -19,11 +30,13 @@ pub struct DelveLogger {
     autoflush_enabled: bool,
     autoflush_size: usize,
     inner_buf: Mutex<String>,
+    targets: OnceLock<Vec<String>>,
 }
 
 impl DelveLogger {
-    const DEFAULT_LOG_NAME: &'static str = "delve.log";
-    const DEFAULT_AUTOFLUSH_SIZE: usize = 1024;
+    pub const DEFAULT_LOG_NAME: &'static str = "delve.log";
+    pub const TARGET_ENV_VAR_NAME: &'static str = "DLV_LOG_TARGETS";
+    pub const DEFAULT_AUTOFLUSH_SIZE: usize = 1024;
 
     pub const fn new(level: Level, autoflush_enabled: bool, autoflush_size: usize) -> Self {
         Self {
@@ -32,7 +45,16 @@ impl DelveLogger {
             autoflush_enabled,
             autoflush_size,
             inner_buf: Mutex::new(String::new()),
+            targets: OnceLock::new(),
         }
+    }
+
+    fn init_targets(&self) -> Vec<String> {
+        if let Ok(val) = std::env::var(Self::TARGET_ENV_VAR_NAME) {
+            return val.split(",").map(String::from).collect();
+        }
+
+        Vec::new()
     }
 
     /// idempotent
@@ -44,13 +66,25 @@ impl DelveLogger {
             Some(pb) => pb,
         };
 
+        self.targets.get_or_init(|| self.init_targets());
+
         self.location.get_or_init(|| path_buf);
     }
 }
 
 impl log::Log for DelveLogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        metadata.level() >= self.level
+        if metadata.level() < self.level {
+            return false;
+        }
+
+        metadata.target().is_empty()
+            || self
+                .targets
+                .get_or_init(|| self.init_targets())
+                .iter()
+                .find(|&item| item.eq(metadata.target()))
+                .is_some()
     }
 
     fn log(&self, record: &log::Record) {
@@ -63,7 +97,7 @@ impl log::Log for DelveLogger {
         let log_line = format!(
             "[{}]-(thread {})-<{}> {}\n",
             time,
-            THREAD_ID.with(|t| t.clone()),
+            THREAD_ID.with(|t| *t),
             record.metadata().level(),
             record.args()
         );
@@ -80,21 +114,22 @@ impl log::Log for DelveLogger {
     }
 
     fn flush(&self) {
-        let location = self.location.get().expect("logger not initialized");
+        let location = self.location.get().expect("flush called before init");
         let mut file_handle = File::options()
             .create(true)
-            .write(true)
             .append(true)
             .open(location)
-            .expect(&format!(
-                "log file at location {:?} unable to be opened",
-                &self.location
-            ));
+            .unwrap_or_else(|_| {
+                panic!(
+                    "log file at location {:?} unable to be opened",
+                    self.location
+                )
+            });
 
-        let _lock_guard = file_handle.lock().expect(&format!(
-            "unable to acquire lock on log file {:?}",
-            &self.location
-        ));
+        // released when file handle dropped
+        file_handle
+            .lock()
+            .unwrap_or_else(|_| panic!("unable to acquire lock on log file {:?}", self.location));
 
         let mut inner_buf = self.inner_buf.lock().expect("log mutex poisoned on flush");
         let _ = file_handle.write(inner_buf.as_bytes());
