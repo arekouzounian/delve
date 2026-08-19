@@ -4,7 +4,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 use std::thread;
 
 use delve::engine::DelveEngine;
-use delve::entities::{Cube, RectPrism};
+use delve::entities::{Cube, RectPrism, Text};
 use delve::entities::{Entities, Plane};
 use delve::input::listen_for_input;
 use delve::log::DelveLogger;
@@ -35,12 +35,16 @@ fn main() -> std::io::Result<()> {
     let mut scene = Scene::new(camera, AMBIENT_LIGHTING);
 
     scene.register_light(Light::new(Vec3::new(0.0, 2.0, -1.0), 0.5));
-    // ground
     let ground = Plane::new(20.0, 20.0, Vec3::Y);
     scene.register_shape(Entities::Plane(ground));
 
-    // draw a number of spheres based on current directory.
-    let dir = read_dir("/home/arek")?;
+    // consider ascii art?
+    let mut intro_text = Text::new(String::from("Welcome to Delve!"));
+    intro_text.entity_fields_mut().position = Vec3::new(0.0, 1.0, 1.0);
+    scene.register_shape(Entities::Text(intro_text));
+
+    // draw a number of shapes based on current directory.
+    let dir = read_dir(std::env::home_dir().expect("you don't have a home directory...?"))?;
     let mut new_objects = Vec::new();
     for entry in dir {
         let entry = entry?;

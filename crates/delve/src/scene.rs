@@ -1,3 +1,4 @@
+use crossterm::terminal;
 use delve_macros::entity;
 use delve_shared::{constants::INPUT_SCALE, math::Vec3, traits::Entity, types::Collision};
 
@@ -103,6 +104,10 @@ pub struct Scene {
     objects: Vec<Entities>,
     lights: Vec<Light>,
     ambient_lighting: f32,
+    // (cols, rows)
+    // TODO: this isn't ideal because it'll break if we implement resize
+    // support on the framebuffer. But it's alright for now.
+    screen_dimensions: (u16, u16),
 }
 
 impl Scene {
@@ -113,6 +118,7 @@ impl Scene {
             objects: Vec::new(),
             lights: Vec::new(),
             ambient_lighting,
+            screen_dimensions: terminal::size().expect("fatal: unable to get terminal size!"),
         }
     }
 
@@ -157,8 +163,24 @@ impl Scene {
     pub fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
         let mut closest: Option<Collision> = None;
 
-        for shape in self.objects.iter() {
-            if let Some(collision) = shape.intersect(ray_origin, ray_direction) {
+        for entity in self.objects.iter() {
+            // TODO: perf test this to see if this is actually better than dynamic dispatch
+            // the theory here is that this is better for prefetching & branch prediction
+            let collision = match entity {
+                Entities::Sphere(s) => s.intersect(ray_origin, ray_direction),
+                Entities::RectPrism(r) => r.intersect(ray_origin, ray_direction),
+                Entities::Cube(c) => c.intersect(ray_origin, ray_direction),
+                Entities::Plane(p) => p.intersect(ray_origin, ray_direction),
+                Entities::Text(t) => t.intersect(
+                    ray_origin,
+                    ray_direction,
+                    self.camera.fov_factor(),
+                    self.get_normals(),
+                    self.screen_dimensions.1,
+                ),
+            };
+
+            if let Some(collision) = collision {
                 match closest.take() {
                     None => closest = Some(collision),
                     Some(c) => closest = Some(Collision::closest(collision, c)),
@@ -209,6 +231,9 @@ impl Scene {
 
         // horizontal (wall) collision: cylinder closest-point approach
         for entity in self.objects.iter() {
+            if matches!(entity, Entities::Text(_)) {
+                continue;
+            }
             let closest = entity.closest_point(self.camera.entity_fields.position);
             let delta = self.camera.entity_fields.position - closest;
 

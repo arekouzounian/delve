@@ -1,3 +1,11 @@
+use crate::{
+    input::construct_camera_forces,
+    render::{Cell, FrameBuffer},
+    scene::Scene,
+};
+use delve_shared::constants::*;
+use delve_shared::traits::Entity;
+
 use std::io::{Write, stdout};
 use std::sync::atomic::AtomicU32;
 use std::sync::{
@@ -6,14 +14,6 @@ use std::sync::{
 };
 use std::thread::sleep;
 use std::time::Instant;
-
-use crate::{
-    input::construct_camera_forces,
-    render::{Cell, FrameBuffer},
-    scene::Scene,
-};
-use delve_shared::constants::*;
-use delve_shared::traits::Entity;
 
 use crossterm::{QueueableCommand, cursor, event, terminal};
 use log::info;
@@ -157,7 +157,14 @@ impl DelveEngine {
 
                     if let Some(hit) = scene.intersect(camera_position, normalized_ray_direction) {
                         let brightness = scene.lambertian_brightness(&hit);
-                        row_buf[col as usize] = Some(Cell::with_scale(brightness, &scale[..]));
+
+                        let cell = if let Some(rune) = hit.rune {
+                            Cell::with_rune(rune, 1.0)
+                        } else {
+                            Cell::with_scale(brightness, &scale[..])
+                        };
+
+                        row_buf[col as usize] = Some(cell);
                     } else {
                         row_buf[col as usize] = None;
                     }

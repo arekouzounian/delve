@@ -11,7 +11,6 @@ impl<T: Write + ExecutableCommand + QueueableCommand> BufType for T {}
 
 #[derive(Clone, PartialEq)]
 pub struct Cell {
-    #[allow(unused)]
     brightness: f32,
     rune: char,
 }
@@ -27,6 +26,10 @@ impl Cell {
         let bucket = (brightness * ((scale.len() - 1) as f32)) as usize;
 
         scale[bucket]
+    }
+
+    pub fn with_rune(rune: char, brightness: f32) -> Self {
+        Self { brightness, rune }
     }
 
     pub fn default_scale(brightness: f32) -> Self {

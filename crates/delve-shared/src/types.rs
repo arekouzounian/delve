@@ -5,6 +5,7 @@ pub struct Collision {
     pub collision_position: Vec3,
     pub surface_normal: Vec3,
     pub length_coefficient: f32,
+    pub rune: Option<char>,
 }
 
 impl Collision {

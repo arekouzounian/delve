@@ -9,11 +9,14 @@ use delve_shared::{
 
 use delve_macros::entity;
 
+use crate::scene::CameraNormals;
+
 pub enum Entities {
     Sphere(Sphere),
     RectPrism(RectPrism),
     Cube(Cube),
     Plane(Plane),
+    Text(Text),
 }
 
 impl std::fmt::Debug for Entities {
@@ -29,26 +32,20 @@ impl std::fmt::Debug for Entities {
                 "Plane(width: {}, length: {})",
                 p.width, p.length
             )),
+            Self::Text(t) => f.write_fmt(format_args!("Text(msg: {})", t.msg)),
         }
     }
 }
 
 impl Entities {
-    pub fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
-        match self {
-            Self::Sphere(s) => s.intersect(ray_origin, ray_direction),
-            Self::RectPrism(r) => r.intersect(ray_origin, ray_direction),
-            Self::Cube(c) => c.intersect(ray_origin, ray_direction),
-            Self::Plane(p) => p.intersect(ray_origin, ray_direction),
-        }
-    }
-
     pub fn closest_point(&self, origin_point: Vec3) -> Vec3 {
         match self {
             Self::Sphere(s) => s.closest_point(origin_point),
             Self::RectPrism(r) => r.closest_point(origin_point),
             Self::Cube(c) => c.closest_point(origin_point),
             Self::Plane(p) => p.closest_point(origin_point),
+            // text does not participate in physics collision; caller skips it
+            Self::Text(_) => origin_point,
         }
     }
 }
@@ -72,7 +69,7 @@ impl Sphere {
     /// (entry and exit point), and those points are both positive (in front of the camera).
     /// the collision is at the closest point, the entry.
     /// ray_direction should be normalized
-    fn intersect(&self, ray_origin: Vec3, ray_direction_normal: Vec3) -> Option<Collision> {
+    pub fn intersect(&self, ray_origin: Vec3, ray_direction_normal: Vec3) -> Option<Collision> {
         if self.entity_fields.invisible {
             return None;
         }
@@ -107,6 +104,7 @@ impl Sphere {
             collision_position,
             surface_normal,
             length_coefficient,
+            rune: None,
         })
     }
 
@@ -249,6 +247,7 @@ impl RectPrism {
                 collision_position: position,
                 length_coefficient: t_enter,
                 surface_normal: normal,
+                rune: None,
             });
         }
 
@@ -293,7 +292,7 @@ impl Plane {
         }
     }
 
-    fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
+    pub fn intersect(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Collision> {
         if self.entity_fields.invisible {
             return None;
         }
@@ -333,6 +332,7 @@ impl Plane {
             collision_position: self.entity_fields.rotation.apply(collision)
                 + self.entity_fields.position,
             length_coefficient: t,
+            rune: None,
         })
     }
 
@@ -350,5 +350,79 @@ impl Plane {
 
         // transform back into world space
         self.entity_fields.rotation.apply(op_local) + self.entity_fields.position
+    }
+}
+
+#[entity]
+pub struct Text {
+    msg: String,
+}
+
+impl Text {
+    pub fn new(msg: String) -> Self {
+        Self {
+            msg,
+            ..Self::default()
+        }
+    }
+
+    /// single line, camera-facing billboard sized so each glyph fills one cell.
+    pub fn intersect(
+        &self,
+        ray_origin: Vec3,
+        ray_direction: Vec3,
+        fov_factor: f32,
+        normals: CameraNormals,
+        rows: u16,
+    ) -> Option<Collision> {
+        if self.entity_fields.invisible || self.msg.is_empty() {
+            return None;
+        }
+
+        let center = self.entity_fields.position;
+        let to_center = center - ray_origin;
+
+        // forward-distance from camera to billboard plane
+        let d = to_center.dot(normals.forward);
+        if d <= 0.0 {
+            return None;
+        }
+
+        // cell size in world units at distance d, matching the projection in engine.rs
+        let char_w = d * fov_factor / rows as f32;
+        let char_h = 2.0 * char_w;
+
+        let denom = ray_direction.dot(normals.forward);
+        if denom.abs() < 1e-6 {
+            return None;
+        }
+
+        let t = d / denom;
+        if t < 0.0 {
+            return None;
+        }
+
+        let hit = ray_origin + ray_direction.scalar_multiply(t);
+        let local = hit - center;
+        let u = local.dot(normals.right);
+        let v = local.dot(normals.up);
+
+        let num_chars = self.msg.chars().count();
+        let half_w = (num_chars as f32 * char_w) / 2.0;
+        let half_h = char_h / 2.0;
+
+        if u.abs() > half_w || v.abs() > half_h {
+            return None;
+        }
+
+        let idx = (((u + half_w) / char_w) as usize).min(num_chars - 1);
+        let rune = self.msg.chars().nth(idx).unwrap();
+
+        Some(Collision {
+            collision_position: hit,
+            surface_normal: normals.forward.scalar_multiply(-1.0),
+            length_coefficient: t,
+            rune: Some(rune),
+        })
     }
 }
