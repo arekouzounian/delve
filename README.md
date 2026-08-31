@@ -2,7 +2,7 @@
 ---
 An ASCII rendering engine & video game for the terminal. Hand-coded, for enjoyment purposes only.
 
-The goal is to layer a simple game atop this engine, so it may later involve physics and all that stuff. This is a simple project that's just for fun. No AI allowed to write code, although Claude was pretty helpful in explaining a lot of the vector math, and for establishing a preliminary roadmap.
+This is a simple project that's just for fun. No AI allowed to write code, although Claude was pretty helpful in explaining a lot of the vector math, and for establishing a preliminary roadmap.
 
 The goal is to adopt few dependencies; `crossterm` is the major way the engine performs actual terminal rendering, and some number crates (`num-trait`, `rand`) will also likely enter the picture. But other than that I want to try to make it as light on deps as possible.
 
@@ -12,10 +12,9 @@ Relies on the kitty extended keyboard protocol for proper movement, so will only
 ## Running
 No packaged binaries just yet. Just download the source and run:
 ```sh
-# curl www.virus.com | sh # just kidding
 git clone https://github.com/arekouzounian/delve/delve.git
-cd crates/delve
-cargo run --release # don't forget release mode or else performance is brutal
+# definitely run in release mode, scary things happen in non-release mode
+cargo run --release --bin delve
 
 # Alternatively, if you're on kitty with remote-control enabled, you can use the run.sh script.
 # This script takes in a command line argument (font size) and resizes your terminal to that font size
