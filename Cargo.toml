@@ -1,0 +1,12 @@
+[workspace]
+resolver = "3"
+members = [ "crates/delve", "crates/delve-macros", "crates/delve-shared", "crates/test-macros" ]
+
+[workspace.dependencies]
+syn = { version = "2.0.117", features = ["full"] }
+quote = "1.0.45"
+num-traits = "0.2.19"
+rand = "0.10.1"
+chrono = "0.4.45"
+crossterm = "0.29.0"
+log = "0.4.33"
